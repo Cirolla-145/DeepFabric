@@ -3,6 +3,7 @@ import executeQuery from '../db/runQuery.js';
 import {
     extractConceptsWithAi,
     generateQuestionsWithAi,
+    mergeConceptsWithAi,
     gradeShortAnswerWithAi
 } from '../services/ai_service.js';
 
@@ -92,6 +93,43 @@ const parseJson = (value, fallback = null) => {
     return typeof value === 'string' ? JSON.parse(value) : value;
 };
 
+const cleanConceptText = (value) => (value ?? '')
+    .replace(/^\s{0,3}#{1,6}\s*/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const cleanConceptTitle = (value) => cleanConceptText(value)
+    .replace(/^(deep dive|overview|introduction|topic)\s*[:\-]\s*/i, '')
+    .trim();
+
+const comparableText = (value) => cleanConceptText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+const meaningfulDefinition = (candidate) => {
+    const title = cleanConceptTitle(candidate.title);
+    const definition = cleanConceptText(candidate.definition);
+    const definitionIsHeading = comparableText(definition) === comparableText(title) ||
+        (definition.length < 50 && comparableText(definition).includes(comparableText(title)));
+
+    if (!definitionIsHeading && definition.split(/\s+/).length >= 8) return definition;
+
+    const facts = (candidate.facts ?? [])
+        .map(cleanConceptText)
+        .filter((fact) => fact.length > 20 && comparableText(fact) !== comparableText(title));
+    if (facts.length) return facts.slice(0, 2).join(' ');
+
+    const excerpt = cleanConceptText(candidate.source_excerpt);
+    const sentences = excerpt.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [];
+    const explanation = sentences
+        .map((sentence) => sentence.trim())
+        .filter((sentence) => sentence.length > 30 && comparableText(sentence) !== comparableText(title))
+        .slice(0, 2)
+        .join(' ');
+    return explanation || `This concept explains the key ideas and practical use of ${title}.`;
+};
+
 const questionHash = ({ concept_id, question_type, question_text, correct_answer }) => createHash('sha256')
     .update(JSON.stringify({
         concept_id,
@@ -112,7 +150,7 @@ const userOwnsStudySession = async (studySessionId, userId) => {
 
 const userOwnsAttempt = async (attemptId, userId) => {
     const rows = await executeQuery(
-        `SELECT a.id, a.question_id, a.concept_id, a.result, a.confidence, a.grading_reason, a.overridden,
+        `SELECT a.id, a.question_id, q.concept_id, a.result, a.confidence, a.grading_reason, a.overridden,
                 a.override_reason, a.created_at, q.question_type, q.question_text,
                 q.correct_answer, ss.id AS study_session_id
          FROM attempts a
@@ -141,11 +179,17 @@ const masteryBucket = (score) => {
 // Rebuilding from the immutable attempt history makes an override safe and repeatable.
 // Attempts lose weight linearly over 30 days, down to a 25% minimum weight.
 const recalculateMastery = async (userId, conceptId) => {
+    const previousRows = await executeQuery(
+        'SELECT score, last_reviewed_at, next_review_at, calculation_metadata FROM mastery WHERE user_id = ? AND concept_id = ?',
+        [userId, conceptId]
+    );
+    const previous = previousRows[0] ?? null;
     const rows = await executeQuery(
         `SELECT a.result, a.created_at
          FROM attempts a
          JOIN study_sessions ss ON ss.id = a.study_session_id
-         WHERE ss.user_id = ? AND a.concept_id = ? AND a.result IS NOT NULL
+         JOIN questions q ON q.id = a.question_id
+         WHERE ss.user_id = ? AND q.concept_id = ? AND a.result IS NOT NULL
          ORDER BY a.created_at ASC`,
         [userId, conceptId]
     );
@@ -182,7 +226,17 @@ const recalculateMastery = async (userId, conceptId) => {
         [await newId(), userId, conceptId, score, lastReviewedAt, nextReviewAt, JSON.stringify(metadata)]
     );
 
-    return { score, bucket: bucket.label, next_review_at: nextReviewAt, metadata };
+    return { score, bucket: bucket.label, next_review_at: nextReviewAt, metadata, previous };
+};
+
+const writeMasteryRecalculationAudit = async (userId, conceptId, mastery, reason) => {
+    await writeAuditLog(userId, 'mastery', conceptId, 'recalculated', {
+        reason,
+        score: mastery.score,
+        bucket: mastery.bucket,
+        next_review_at: mastery.next_review_at,
+        attempt_count: mastery.metadata.attempt_count
+    }, mastery.previous);
 };
 
 const recalculateSessionScore = async (studySessionId) => {
@@ -308,6 +362,13 @@ export const createSourceVersion = async (req, res) => {
             return res.status(403).json({ message: 'You do not have access to this source' });
         }
 
+        const previousVersions = await executeQuery(
+            `SELECT id, version, raw_text
+             FROM source_versions
+             WHERE source_id = ? AND version = ?`,
+            [source_id, source.current_version]
+        );
+        const previousVersion = previousVersions[0] ?? null;
         const version = source.current_version + 1;
         const sourceVersionId = await newId();
 
@@ -335,8 +396,13 @@ export const createSourceVersion = async (req, res) => {
         await writeAuditLog(req.user.id, 'source', source_id, 'version_created', {
             version,
             source_version_id: sourceVersionId,
+            raw_text,
             concepts_marked_outdated: true
-        }, { previous_version: source.current_version });
+        }, previousVersion ? {
+            version: previousVersion.version,
+            source_version_id: previousVersion.id,
+            raw_text: previousVersion.raw_text
+        } : { previous_version: source.current_version });
 
         return res.status(201).json({
             message: 'Source version created; existing concepts now need review',
@@ -362,13 +428,16 @@ export const processSource = async (req, res) => {
         );
         const sourceVersion = versionRows[0];
         const existingRows = await executeQuery(
-            'SELECT title FROM concepts WHERE source_version_id = ?',
+            'SELECT id, title, status FROM concepts WHERE source_version_id = ?',
             [sourceVersion.id]
         );
-        const existingTitles = new Set(existingRows.map((row) => row.title.toLowerCase()));
+        const existingConcepts = new Map(
+            existingRows.map((row) => [cleanConceptTitle(row.title).toLowerCase(), row])
+        );
         const blocks = sourceVersion.source_type === 'pdf' ? [] : sourceVersion.raw_text
             .split(/\r?\n\s*\r?\n|\r?\n/)
             .map((block) => block.replace(/\s+/g, ' ').trim())
+            .filter((block) => !/^#{1,6}\s/.test(block))
             .filter((block) => block.length >= 20)
             .slice(0, 8);
         const mockCandidates = (blocks.length ? blocks : [sourceVersion.raw_text.trim()]).map((block) => {
@@ -392,7 +461,13 @@ export const processSource = async (req, res) => {
         if (sourceVersion.source_type === 'pdf' && !aiCandidates?.length) {
             return res.status(502).json({ message: 'AI could not process this PDF. Please try again.' });
         }
-        const candidates = aiCandidates?.length ? aiCandidates : mockCandidates;
+        const candidates = (aiCandidates?.length ? aiCandidates : mockCandidates).map((candidate) => ({
+            ...candidate,
+            title: cleanConceptTitle(candidate.title),
+            definition: meaningfulDefinition(candidate),
+            facts: (candidate.facts ?? []).map(cleanConceptText).filter(Boolean),
+            source_excerpt: cleanConceptText(candidate.source_excerpt)
+        })).filter((candidate) => candidate.title && candidate.definition);
         const model = aiResult?.model ?? 'deterministic-local-v1';
         const promptVersion = aiResult ? 'concept-extraction-v1' : 'mock-concept-extraction-v1';
 
@@ -408,7 +483,17 @@ export const processSource = async (req, res) => {
 
         const created = [];
         for (const candidate of candidates) {
-            if (existingTitles.has(candidate.title.toLowerCase())) continue;
+            const existing = existingConcepts.get(candidate.title.toLowerCase());
+            if (existing?.status === 'suggested') {
+                await executeQuery(
+                    `UPDATE concepts
+                     SET title = ?, definition = ?, facts = ?, is_outdated = FALSE
+                     WHERE id = ?`,
+                    [candidate.title, candidate.definition, jsonValue(candidate.facts), existing.id]
+                );
+                continue;
+            }
+            if (existing) continue;
             const conceptId = await newId();
             await executeQuery(
                 `INSERT INTO concepts
@@ -523,7 +608,6 @@ export const createConcept = async (req, res) => {
                 source_excerpt
             ]
         );
-
         await writeAuditLog(req.user.id, 'concept', conceptId, 'created', { title, status: 'suggested' });
 
         return res.status(201).json({
@@ -580,7 +664,6 @@ export const reviewConcept = async (req, res) => {
         const nextDefinition = definition === undefined ? current.definition : definition;
         const nextFacts = facts === undefined ? jsonValue(current.facts) : jsonValue(facts);
         const nextTags = tags === undefined ? jsonValue(current.tags) : jsonValue(tags);
-
         await executeQuery(
             `UPDATE concepts
              SET title = ?, definition = ?, facts = ?, tags = ?, status = ?, is_outdated = FALSE
@@ -622,35 +705,94 @@ export const mergeConcepts = async (req, res) => {
         if (source.module_id !== target.module_id) {
             return res.status(400).json({ message: 'Concepts can only be merged within the same module' });
         }
-        if (source.status === 'merged' || target.status === 'merged') {
-            return res.status(400).json({ message: 'Merged concepts cannot be used in another merge' });
+        if (source.status === 'rejected' || target.status === 'rejected') {
+            return res.status(400).json({ message: 'Rejected concepts cannot be merged' });
         }
+
+        const conceptRows = await executeQuery(
+            `SELECT id, module_id, source_version_id, title, definition, facts, tags, status
+             FROM concepts WHERE id IN (?, ?)`,
+            [conceptId, target_concept_id]
+        );
+        const sourceData = conceptRows.find((concept) => concept.id === conceptId);
+        const targetData = conceptRows.find((concept) => concept.id === target_concept_id);
+        const aiResult = await mergeConceptsWithAi([
+            { ...sourceData, facts: parseJson(sourceData.facts, []), tags: parseJson(sourceData.tags, []) },
+            { ...targetData, facts: parseJson(targetData.facts, []), tags: parseJson(targetData.tags, []) }
+        ]);
+        const merged = aiResult.data;
+        const mergedConceptId = await newId();
+        const aiRunId = await newId();
+
+        await executeQuery(
+            `INSERT INTO ai_runs (id, user_id, run_type, model, prompt_version, input_data, output_data)
+             VALUES (?, ?, 'concept_extraction', ?, 'concept-merge-v1', ?, ?)`,
+            [
+                aiRunId,
+                req.user.id,
+                aiResult.model,
+                JSON.stringify({ concepts: [sourceData, targetData] }),
+                JSON.stringify({ concept: merged, response_id: aiResult.responseId })
+            ]
+        );
+        await executeQuery(
+            `INSERT INTO concepts
+                (id, module_id, source_version_id, source_excerpt, ai_run_id, title, definition, facts, tags, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'merged')`,
+            [
+                mergedConceptId,
+                source.module_id,
+                targetData.source_version_id,
+                `Merged from: ${sourceData.title}; ${targetData.title}`,
+                aiRunId,
+                merged.title,
+                merged.definition,
+                jsonValue(merged.facts ?? []),
+                jsonValue(merged.tags ?? [])
+            ]
+        );
 
         const movedRows = await executeQuery(
             `SELECT id FROM questions
-             WHERE concept_id = ? AND status IN ('generated', 'approved', 'edited')`,
-            [conceptId]
+             WHERE concept_id IN (?, ?) AND status IN ('generated', 'approved', 'edited')`,
+            [conceptId, target_concept_id]
         );
         await executeQuery(
             `UPDATE questions SET concept_id = ?
-             WHERE concept_id = ? AND status IN ('generated', 'approved', 'edited')`,
-            [target_concept_id, conceptId]
+             WHERE concept_id IN (?, ?) AND status IN ('generated', 'approved', 'edited')`,
+            [mergedConceptId, conceptId, target_concept_id]
         );
         await executeQuery(
-            `UPDATE concepts SET status = 'merged', merged_into_concept_id = ? WHERE id = ?`,
-            [target_concept_id, conceptId]
+            `UPDATE concepts
+             SET status = 'rejected', merged_into_concept_id = ?
+             WHERE id IN (?, ?)`,
+            [mergedConceptId, conceptId, target_concept_id]
         );
-        const mastery = await recalculateMastery(req.user.id, target_concept_id);
-        await writeAuditLog(req.user.id, 'concept', conceptId, 'merged', {
-            merged_into_concept_id: target_concept_id,
+        const mastery = await recalculateMastery(req.user.id, mergedConceptId);
+        await writeMasteryRecalculationAudit(req.user.id, mergedConceptId, mastery, 'concept_merge');
+        await writeAuditLog(req.user.id, 'concept', mergedConceptId, 'merged', {
+            merged_from_concept_ids: [conceptId, target_concept_id],
             moved_question_ids: movedRows.map((row) => row.id),
-            target_mastery: mastery
-        }, { status: source.status, merged_into_concept_id: null });
+            mastery
+        });
+        await writeAuditLog(req.user.id, 'concept', conceptId, 'rejected_for_merge', {
+            status: 'rejected', merged_into_concept_id: mergedConceptId
+        }, sourceData);
+        await writeAuditLog(req.user.id, 'concept', target_concept_id, 'rejected_for_merge', {
+            status: 'rejected', merged_into_concept_id: mergedConceptId
+        }, targetData);
 
         return res.status(200).json({
             message: 'Concepts merged successfully',
-            source_concept: { id: conceptId, status: 'merged', merged_into_concept_id: target_concept_id },
-            target_concept: { id: target_concept_id },
+            merged_concept: {
+                id: mergedConceptId,
+                title: merged.title,
+                definition: merged.definition,
+                status: 'merged',
+                is_outdated: false,
+                merged_into_concept_id: null,
+                mastery_score: mastery.score
+            },
             moved_question_count: movedRows.length,
             mastery
         });
@@ -890,7 +1032,7 @@ export const regenerateQuestions = async (req, res) => {
         if (!Array.isArray(questions)) {
             const concepts = await executeQuery(
                 `SELECT id, title, definition, facts FROM concepts
-                 WHERE module_id = ? AND status IN ('accepted', 'edited') AND is_outdated = FALSE
+                 WHERE module_id = ? AND status IN ('accepted', 'edited', 'merged') AND is_outdated = FALSE
                  ORDER BY title ASC`,
                 [moduleId]
             );
@@ -942,7 +1084,7 @@ export const regenerateQuestions = async (req, res) => {
                 return res.status(400).json({ message: 'Each question needs valid concept_id, type, text, answer, and difficulty (1-5)' });
             }
             const concept = await userOwnsConcept(concept_id, req.user.id);
-            if (!concept || concept.module_id !== moduleId || !['accepted', 'edited'].includes(concept.status)) {
+            if (!concept || concept.module_id !== moduleId || !['accepted', 'edited', 'merged'].includes(concept.status)) {
                 return res.status(400).json({ message: 'Questions can only be generated for accepted or edited concepts in this module' });
             }
 
@@ -1054,7 +1196,7 @@ export const createStudySession = async (req, res) => {
              JOIN concepts c ON c.id = q.concept_id
              LEFT JOIN mastery m ON m.concept_id = c.id AND m.user_id = ?
              WHERE q.module_id = ? AND q.status IN ('approved', 'edited')
-               AND c.status IN ('accepted', 'edited') AND c.is_outdated = FALSE
+               AND c.status IN ('accepted', 'edited', 'merged') AND c.is_outdated = FALSE
                AND q.question_type IN (${typePlaceholders})
              ORDER BY CASE WHEN ? THEN COALESCE(m.score, 0) ELSE 0 END ASC, q.created_at ASC, q.id ASC
              LIMIT ?`,
@@ -1170,7 +1312,7 @@ export const createAttempt = async (req, res) => {
         }
 
         const question = await executeQuery(
-            `SELECT q.id
+            `SELECT q.id, q.concept_id
              FROM questions q
              JOIN question_versions qv ON qv.question_id = q.id
              WHERE q.id = ? AND qv.id = ? AND q.module_id = ?`,
@@ -1295,6 +1437,7 @@ export const gradeAttempt = async (req, res) => {
         );
         await recalculateSessionScore(attempt.study_session_id);
         const mastery = await recalculateMastery(req.user.id, attempt.concept_id);
+        await writeMasteryRecalculationAudit(req.user.id, attempt.concept_id, mastery, 'attempt_graded');
         await writeAuditLog(req.user.id, 'attempt', attemptId, 'graded', {
             result: finalResult, confidence: finalConfidence, grading_reason: finalReason, mastery
         }, { result: attempt.result, confidence: attempt.confidence, grading_reason: attempt.grading_reason });
@@ -1329,6 +1472,7 @@ export const overrideAttemptGrade = async (req, res) => {
         );
         await recalculateSessionScore(attempt.study_session_id);
         const mastery = await recalculateMastery(req.user.id, attempt.concept_id);
+        await writeMasteryRecalculationAudit(req.user.id, attempt.concept_id, mastery, 'grade_overridden');
         await writeAuditLog(req.user.id, 'attempt', attemptId, 'grade_overridden', {
             result, overridden: true, override_reason, mastery
         }, {
@@ -1360,7 +1504,7 @@ export const getDueReviews = async (req, res) => {
              FROM mastery m
              JOIN concepts c ON c.id = m.concept_id
              WHERE m.user_id = ? AND c.module_id = ?
-               AND c.status IN ('accepted', 'edited')
+               AND c.status IN ('accepted', 'edited', 'merged')
                AND c.is_outdated = FALSE
                AND m.next_review_at <= NOW()
              ORDER BY m.next_review_at ASC, m.score ASC, c.title ASC`,
@@ -1414,6 +1558,29 @@ export const getModuleSources = async (req, res) => {
     }
 };
 
+export const getSourceVersions = async (req, res) => {
+    try {
+        const { sourceId } = req.params;
+        const source = await userOwnsSource(sourceId, req.user.id);
+        if (!source) return res.status(404).json({ message: 'Source not found' });
+
+        const versions = await executeQuery(
+            `SELECT sv.id, sv.version,
+                    CASE WHEN src.source_type = 'pdf' THEN NULL ELSE sv.raw_text END AS raw_text,
+                    sv.created_at
+             FROM source_versions sv
+             JOIN sources src ON src.id = sv.source_id
+             WHERE sv.source_id = ?
+             ORDER BY sv.version DESC`,
+            [sourceId]
+        );
+        return res.status(200).json({ current_version: source.current_version, versions });
+    } catch (error) {
+        console.error('Error getting source versions:', error.message);
+        return res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
 export const getModuleConcepts = async (req, res) => {
     try {
         const { moduleId } = req.params;
@@ -1434,6 +1601,48 @@ export const getModuleConcepts = async (req, res) => {
         return res.status(200).json({ concepts });
     } catch (error) {
         console.error('Error getting module concepts:', error.message);
+        return res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+// Concept edits are immutable in the audit log. The version picker reads those
+// snapshots, so no extra database table is needed for concept history.
+export const getConceptVersions = async (req, res) => {
+    try {
+        const { conceptId } = req.params;
+        if (!(await userOwnsConcept(conceptId, req.user.id))) {
+            return res.status(404).json({ message: 'Concept not found' });
+        }
+
+        const currentRows = await executeQuery(
+            `SELECT title, definition, facts, tags, status, updated_at
+             FROM concepts WHERE id = ?`,
+            [conceptId]
+        );
+        const edits = await executeQuery(
+            `SELECT old_value, created_at
+             FROM audit_logs
+             WHERE entity_type = 'concept' AND entity_id = ? AND action = 'edit'
+             ORDER BY created_at ASC`,
+            [conceptId]
+        );
+        const versions = edits.map((edit, index) => ({
+            version: index + 1,
+            ...parseJson(edit.old_value, {}),
+            created_at: edit.created_at
+        }));
+        versions.push({
+            version: edits.length + 1,
+            ...currentRows[0],
+            created_at: currentRows[0].updated_at
+        });
+
+        return res.status(200).json({
+            current_version: versions.length,
+            versions: versions.reverse()
+        });
+    } catch (error) {
+        console.error('Error getting concept versions:', error.message);
         return res.status(500).json({ message: 'Internal server error' });
     }
 };
@@ -1523,7 +1732,7 @@ export const searchLearningContent = async (req, res) => {
              JOIN modules m ON m.id = c.module_id
              JOIN subjects s ON s.id = m.subject_id
              JOIN workspaces w ON w.id = s.workspace_id
-             WHERE w.user_id = ? AND c.status IN ('accepted', 'edited') AND c.is_outdated = FALSE
+             WHERE w.user_id = ? AND c.status IN ('accepted', 'edited', 'merged') AND c.is_outdated = FALSE
                AND (c.title LIKE ? OR c.definition LIKE ? OR CAST(c.facts AS CHAR) LIKE ? OR CAST(c.tags AS CHAR) LIKE ?)
              ORDER BY c.title ASC LIMIT 25`,
             [req.user.id, pattern, pattern, pattern, pattern]
@@ -1562,7 +1771,7 @@ export const getModuleInsights = async (req, res) => {
                 SUM(CASE WHEN COALESCE(m.score, 0) >= 75 THEN 1 ELSE 0 END) AS mastered_count
              FROM concepts c
              LEFT JOIN mastery m ON m.concept_id = c.id AND m.user_id = ?
-             WHERE c.module_id = ? AND c.status IN ('accepted', 'edited') AND c.is_outdated = FALSE`,
+             WHERE c.module_id = ? AND c.status IN ('accepted', 'edited', 'merged') AND c.is_outdated = FALSE`,
             [req.user.id, moduleId]
         );
         const trendRows = await executeQuery(
@@ -1598,7 +1807,7 @@ export const getModuleInsights = async (req, res) => {
              LEFT JOIN questions q ON q.concept_id = c.id
              LEFT JOIN attempts a ON a.question_id = q.id
              LEFT JOIN study_sessions ss ON ss.id = a.study_session_id AND ss.user_id = ?
-             WHERE c.module_id = ? AND c.status IN ('accepted', 'edited') AND c.is_outdated = FALSE
+             WHERE c.module_id = ? AND c.status IN ('accepted', 'edited', 'merged') AND c.is_outdated = FALSE
              GROUP BY c.id, c.title, m.score
              ORDER BY mastery_score ASC, recent_incorrect_count DESC, c.title ASC LIMIT 5`,
             [req.user.id, req.user.id, moduleId]
@@ -1650,8 +1859,9 @@ export const getModuleAuditLogs = async (req, res) => {
                  OR (al.entity_type = 'question' AND EXISTS (SELECT 1 FROM questions q WHERE q.id = al.entity_id AND q.module_id = ?))
                  OR (al.entity_type = 'study_session' AND EXISTS (SELECT 1 FROM study_sessions ss WHERE ss.id = al.entity_id AND ss.module_id = ?))
                  OR (al.entity_type = 'attempt' AND EXISTS (SELECT 1 FROM attempts a JOIN study_sessions ss ON ss.id = a.study_session_id WHERE a.id = al.entity_id AND ss.module_id = ?))
+                 OR (al.entity_type = 'mastery' AND EXISTS (SELECT 1 FROM concepts c WHERE c.id = al.entity_id AND c.module_id = ?))
              ) ORDER BY al.created_at DESC`,
-            [req.user.id, moduleId, moduleId, moduleId, moduleId, moduleId, moduleId]
+            [req.user.id, moduleId, moduleId, moduleId, moduleId, moduleId, moduleId, moduleId]
         );
         return res.status(200).json({ audit_logs });
     } catch (error) {

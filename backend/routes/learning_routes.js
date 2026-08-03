@@ -10,8 +10,10 @@ import {
     gradeAttempt,
     getDueReviews,
     getModuleConcepts,
+    getConceptVersions,
     getModuleQuestions,
     getModuleSources,
+    getSourceVersions,
     getModuleStudySessions,
     getModuleInsights,
     getModuleAiRuns,
@@ -45,7 +47,9 @@ router.post('/study-sessions', protectRoute, createStudySession);
 router.get('/study-sessions/:sessionId/questions', protectRoute, getStudySessionQuestions);
 router.patch('/study-sessions/:sessionId/end', protectRoute, endStudySession);
 router.get('/modules/:moduleId/sources', protectRoute, getModuleSources);
+router.get('/sources/:sourceId/versions', protectRoute, getSourceVersions);
 router.get('/modules/:moduleId/concepts', protectRoute, getModuleConcepts);
+router.get('/concepts/:conceptId/versions', protectRoute, getConceptVersions);
 router.get('/modules/:moduleId/questions', protectRoute, getModuleQuestions);
 router.get('/modules/:moduleId/study-sessions', protectRoute, getModuleStudySessions);
 router.get('/modules/:moduleId/insights', protectRoute, getModuleInsights);

@@ -94,14 +94,12 @@ CREATE TABLE study_session_questions (
 );
 CREATE TABLE attempts (
   id CHAR(36) PRIMARY KEY DEFAULT (UUID()), study_session_id CHAR(36) NOT NULL, question_id CHAR(36) NOT NULL,
-  concept_id CHAR(36) NOT NULL,
   question_version_id CHAR(36), grading_ai_run_id CHAR(36), user_answer TEXT, time_taken_seconds INT,
   result ENUM('correct','incorrect','partial'), confidence DECIMAL(5,2), grading_reason TEXT,
   overridden BOOLEAN NOT NULL DEFAULT FALSE, override_reason TEXT, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CHECK (confidence IS NULL OR confidence BETWEEN 0 AND 100),
   FOREIGN KEY (study_session_id) REFERENCES study_sessions(id) ON DELETE CASCADE,
   FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE,
-  FOREIGN KEY (concept_id) REFERENCES concepts(id) ON DELETE RESTRICT,
   FOREIGN KEY (question_version_id) REFERENCES question_versions(id) ON DELETE SET NULL,
   FOREIGN KEY (grading_ai_run_id) REFERENCES ai_runs(id) ON DELETE SET NULL
 );

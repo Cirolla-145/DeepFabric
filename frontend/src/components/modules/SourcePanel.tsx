@@ -3,9 +3,12 @@ import type { Module } from "../../api/contentApi";
 import {
   createPdfSource,
   createSource,
+  createSourceVersion,
+  getSourceVersions,
   importSourceUrl,
   processSource,
   type Source,
+  type SourceVersion,
 } from "../../api/learningApi";
 
 type SourcePanelProps = {
@@ -38,6 +41,14 @@ export function SourcePanel({
   const [text, setText] = useState("");
   const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [editingSourceId, setEditingSourceId] = useState<string | null>(null);
+  const [editedText, setEditedText] = useState("");
+  const [sourceVersions, setSourceVersions] = useState<
+    Record<string, SourceVersion[]>
+  >({});
+  const [selectedVersion, setSelectedVersion] = useState<
+    Record<string, number>
+  >({});
   const [isWorking, setIsWorking] = useState(false);
 
   const chooseFile = (event: ChangeEvent<HTMLInputElement>) => {
@@ -112,6 +123,44 @@ export function SourcePanel({
       onMessage(
         "Processing failed. Confirm the backend is running and Gemini is configured.",
       );
+    } finally {
+      setIsWorking(false);
+    }
+  };
+
+  const startEditing = (source: Source) => {
+    setEditingSourceId(source.id);
+    setEditedText(source.raw_text ?? "");
+  };
+
+  const loadSourceVersions = async (sourceId: string) => {
+    if (sourceVersions[sourceId]) return;
+    try {
+      const versions = await getSourceVersions(sourceId);
+      setSourceVersions((current) => ({ ...current, [sourceId]: versions }));
+    } catch {
+      onMessage("Unable to load source version history.");
+    }
+  };
+
+  const saveNewVersion = async (sourceId: string) => {
+    if (!editedText.trim()) {
+      onMessage("A source version needs some text to save.");
+      return;
+    }
+
+    setIsWorking(true);
+    try {
+      await createSourceVersion(sourceId, editedText.trim());
+      setEditingSourceId(null);
+      setEditedText("");
+      await onSourcesChanged();
+      await onProcessed();
+      onMessage(
+        "Version saved. Existing concepts are marked outdated until you process and review the new version.",
+      );
+    } catch {
+      onMessage("Unable to save this source version.");
     } finally {
       setIsWorking(false);
     }
@@ -207,16 +256,109 @@ export function SourcePanel({
                       {source.source_type.toUpperCase()} · Version{" "}
                       {source.current_version} · {source.status}
                     </p>
+                    <select
+                      className="mt-2 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                      onChange={(event) =>
+                        setSelectedVersion((current) => ({
+                          ...current,
+                          [source.id]: Number(event.target.value),
+                        }))
+                      }
+                      onFocus={() => void loadSourceVersions(source.id)}
+                      value={
+                        selectedVersion[source.id] ?? source.current_version
+                      }
+                    >
+                      {(
+                        sourceVersions[source.id] ?? [
+                          {
+                            id: source.id,
+                            version: source.current_version,
+                            raw_text: source.raw_text,
+                            created_at: "",
+                          },
+                        ]
+                      ).map((version) => (
+                        <option key={version.id} value={version.version}>
+                          Version {version.version}
+                          {version.version === source.current_version
+                            ? " (current)"
+                            : ""}
+                        </option>
+                      ))}
+                    </select>
                   </div>
-                  <button
-                    className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
-                    disabled={isWorking}
-                    onClick={() => void process(source.id)}
-                    type="button"
-                  >
-                    Process
-                  </button>
+                  <div className="flex gap-2">
+                    {source.source_type === "paste" && (
+                      <button
+                        className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700"
+                        disabled={isWorking}
+                        onClick={() => startEditing(source)}
+                        type="button"
+                      >
+                        Edit source
+                      </button>
+                    )}
+                    <button
+                      className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+                      disabled={isWorking}
+                      onClick={() => void process(source.id)}
+                      type="button"
+                    >
+                      Process
+                    </button>
+                  </div>
                 </div>
+                {(() => {
+                  const chosenVersion = (sourceVersions[source.id] ?? []).find(
+                    (version) =>
+                      version.version ===
+                      (selectedVersion[source.id] ?? source.current_version),
+                  );
+                  const versionText =
+                    chosenVersion?.raw_text ?? source.raw_text;
+                  return versionText ? (
+                    <textarea
+                      className="mt-4 min-h-24 w-full rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600"
+                      readOnly
+                      value={versionText}
+                    />
+                  ) : null;
+                })()}
+                {editingSourceId === source.id && (
+                  <div className="mt-4 border-t border-slate-100 pt-4">
+                    <p className="text-sm font-semibold">
+                      Create version {source.current_version + 1}
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      Saving does not erase accepted edits. It marks concepts
+                      from this source outdated until the new version is
+                      processed and reviewed.
+                    </p>
+                    <textarea
+                      className="mt-3 min-h-40 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-indigo-500"
+                      onChange={(event) => setEditedText(event.target.value)}
+                      value={editedText}
+                    />
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                        disabled={isWorking}
+                        onClick={() => void saveNewVersion(source.id)}
+                        type="button"
+                      >
+                        Save new version
+                      </button>
+                      <button
+                        className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-500"
+                        onClick={() => setEditingSourceId(null)}
+                        type="button"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </article>
             ))
           ) : (

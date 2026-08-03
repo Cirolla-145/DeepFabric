@@ -6,7 +6,14 @@ export type Source = {
   source_type: "paste" | "pdf" | "image";
   status: "draft" | "processed" | "needs_review";
   current_version: number;
-  raw_text: string;
+  raw_text: string | null;
+};
+
+export type SourceVersion = {
+  id: string;
+  version: number;
+  raw_text: string | null;
+  created_at: string;
 };
 
 export type Concept = {
@@ -14,7 +21,16 @@ export type Concept = {
   title: string;
   definition: string | null;
   status: string;
+  is_outdated: boolean;
+  merged_into_concept_id: string | null;
   mastery_score: number | null;
+};
+
+export type ConceptVersion = {
+  version: number;
+  title: string;
+  definition: string | null;
+  created_at: string;
 };
 
 export type Question = {
@@ -111,11 +127,33 @@ export async function processSource(sourceId: string) {
   return response.data;
 }
 
+export async function createSourceVersion(sourceId: string, rawText: string) {
+  await api.post("/learning/source-versions", {
+    source_id: sourceId,
+    raw_text: rawText,
+  });
+}
+
+export async function getSourceVersions(sourceId: string) {
+  const response = await api.get<{ versions: SourceVersion[] }>(
+    `/learning/sources/${sourceId}/versions`,
+  );
+  return response.data.versions;
+}
+
 export async function getModuleConcepts(moduleId: string) {
   const response = await api.get<{ concepts: Concept[] }>(
     `/learning/modules/${moduleId}/concepts`,
   );
   return response.data.concepts;
+}
+
+export async function getConceptVersions(conceptId: string) {
+  const response = await api.get<{
+    current_version: number;
+    versions: ConceptVersion[];
+  }>(`/learning/concepts/${conceptId}/versions`);
+  return response.data;
 }
 
 export async function reviewConcept(
@@ -127,6 +165,18 @@ export async function reviewConcept(
   },
 ) {
   await api.patch(`/learning/concepts/${conceptId}`, concept);
+}
+
+export async function mergeConcepts(
+  sourceConceptId: string,
+  targetConceptId: string,
+) {
+  const response = await api.patch<{
+    merged_concept: Concept;
+  }>(`/learning/concepts/${sourceConceptId}/merge`, {
+    target_concept_id: targetConceptId,
+  });
+  return response.data;
 }
 
 export async function generateQuestions(moduleId: string) {
@@ -189,6 +239,21 @@ export async function gradeAttempt(attemptId: string) {
     `/learning/attempts/${attemptId}/grade`,
     {},
   );
+  return response.data;
+}
+
+export async function overrideAttemptGrade(
+  attemptId: string,
+  result: "correct" | "partial" | "incorrect",
+  overrideReason: string,
+) {
+  const response = await api.patch<{
+    attempt: { id: string; result: "correct" | "partial" | "incorrect" };
+    mastery: GradeResult["mastery"];
+  }>(`/learning/attempts/${attemptId}/override`, {
+    result,
+    override_reason: overrideReason || null,
+  });
   return response.data;
 }
 

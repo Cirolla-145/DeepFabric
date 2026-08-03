@@ -3,6 +3,7 @@ import {
   createAttempt,
   endStudySession,
   gradeAttempt,
+  overrideAttemptGrade,
   type GradeResult,
   type StudyQuestion,
   type StudySession,
@@ -42,6 +43,11 @@ export function QuestionPlayer({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [isComplete, setIsComplete] = useState(false);
+  const [showOverride, setShowOverride] = useState(false);
+  const [overrideResult, setOverrideResult] = useState<
+    "correct" | "partial" | "incorrect"
+  >("correct");
+  const [overrideReason, setOverrideReason] = useState("");
 
   const currentQuestion = questions[questionIndex];
   const score = attempts.reduce(
@@ -89,6 +95,35 @@ export function QuestionPlayer({
       return;
     }
     setQuestionIndex((index) => index + 1);
+  };
+
+  const saveOverride = async () => {
+    if (!currentGrade) return;
+    setIsSubmitting(true);
+    setError("");
+    try {
+      const updated = await overrideAttemptGrade(
+        currentGrade.attempt.id,
+        overrideResult,
+        overrideReason,
+      );
+      setCurrentGrade({
+        ...currentGrade,
+        attempt: {
+          ...currentGrade.attempt,
+          result: updated.attempt.result,
+          grading_reason: overrideReason
+            ? `User override: ${overrideReason}`
+            : "User override applied.",
+        },
+        mastery: updated.mastery,
+      });
+      setShowOverride(false);
+    } catch {
+      setError("Unable to save the grade override. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (isComplete) {
@@ -193,6 +228,58 @@ export function QuestionPlayer({
               Mastery: {currentGrade.mastery.score}% ·{" "}
               {currentGrade.mastery.bucket}
             </p>
+            {showOverride ? (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-white/70 p-4">
+                <p className="text-sm font-semibold">Override AI grade</p>
+                <select
+                  className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                  onChange={(event) =>
+                    setOverrideResult(
+                      event.target.value as "correct" | "partial" | "incorrect",
+                    )
+                  }
+                  value={overrideResult}
+                >
+                  <option value="correct">Correct</option>
+                  <option value="partial">Partial</option>
+                  <option value="incorrect">Incorrect</option>
+                </select>
+                <textarea
+                  className="mt-3 min-h-20 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  onChange={(event) => setOverrideReason(event.target.value)}
+                  placeholder="Reason for override (optional)"
+                  value={overrideReason}
+                />
+                <div className="mt-3 flex gap-2">
+                  <button
+                    className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                    disabled={isSubmitting}
+                    onClick={() => void saveOverride()}
+                    type="button"
+                  >
+                    Save override
+                  </button>
+                  <button
+                    className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-600"
+                    onClick={() => setShowOverride(false)}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                className="mt-4 text-sm font-semibold text-slate-700 underline underline-offset-4"
+                onClick={() => {
+                  setOverrideResult(currentGrade.attempt.result);
+                  setShowOverride(true);
+                }}
+                type="button"
+              >
+                Override this grade
+              </button>
+            )}
             <button
               className="mt-4 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white"
               onClick={() => void goToNextQuestion()}

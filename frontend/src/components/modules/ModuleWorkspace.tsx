@@ -72,11 +72,34 @@ export function ModuleWorkspace({ module }: { module: Module | null }) {
   };
 
   const updateConcept = (conceptId: string, changes: Partial<Concept>) => {
-    setConcepts((current) => current.map((concept) => concept.id === conceptId ? { ...concept, ...changes } : concept));
+    setConcepts((current) =>
+      current.map((concept) =>
+        concept.id === conceptId ? { ...concept, ...changes } : concept,
+      ),
+    );
   };
 
   const updateQuestion = (questionId: string, changes: Partial<Question>) => {
-    setQuestions((current) => current.map((question) => question.id === questionId ? { ...question, ...changes } : question));
+    setQuestions((current) =>
+      current.map((question) =>
+        question.id === questionId ? { ...question, ...changes } : question,
+      ),
+    );
+  };
+
+  const mergeConceptsInView = (
+    sourceConceptId: string,
+    targetConceptId: string,
+    mergedConcept: Concept,
+  ) => {
+    setConcepts((current) => [
+      mergedConcept,
+      ...current.map((concept) =>
+        [sourceConceptId, targetConceptId].includes(concept.id)
+          ? { ...concept, status: "rejected" }
+          : concept,
+      ),
+    ]);
   };
 
   useEffect(() => {
@@ -211,6 +234,7 @@ export function ModuleWorkspace({ module }: { module: Module | null }) {
         {activeTab === "concepts" && (
           <ConceptsPanel
             concepts={concepts}
+            onConceptMerged={mergeConceptsInView}
             onConceptUpdated={updateConcept}
             onMessage={setMessage}
           />
@@ -245,14 +269,9 @@ export function ModuleWorkspace({ module }: { module: Module | null }) {
           </div>
         )}
         {activeTab === "insights" && (
-          <InsightsView
-            concepts={concepts}
-            insights={insights}
-          />
+          <InsightsView concepts={concepts} insights={insights} />
         )}
-        {activeTab === "audit" && (
-          <AuditPanel auditLogs={auditLogs} />
-        )}
+        {activeTab === "audit" && <AuditPanel auditLogs={auditLogs} />}
       </div>
     </section>
   );
@@ -268,7 +287,9 @@ function InsightsView({
   if (!insights)
     return (
       <div className="max-w-4xl">
-        <p className="rounded-2xl bg-white p-5 text-sm text-slate-500">Loading learning insights…</p>
+        <p className="rounded-2xl bg-white p-5 text-sm text-slate-500">
+          Loading learning insights…
+        </p>
       </div>
     );
   return (

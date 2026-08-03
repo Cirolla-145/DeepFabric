@@ -35,7 +35,7 @@ export const extractConceptsWithAi = async (sourceInput) => {
     const result = await requestJson(
         `Extract 1 to 8 study concepts from the source. Return only JSON in this shape:
 {"concepts":[{"title":"string","definition":"string","facts":["string"],"tags":["string"],"source_excerpt":"exact supporting excerpt"}]}.
-Facts must contain 3 to 8 concise strings. Do not invent facts absent from the source.`,
+Each title must be a short topic name, not a Markdown heading. Each definition must be a 2 to 4 sentence overview that explains the topic's purpose, behavior, and key idea using the source. Never repeat the title as the definition. Do not use Markdown headings, bullets, or prefixes such as "Overview:" in the definition. Facts must contain 3 to 8 concise strings. Do not invent facts absent from the source.`,
         pdfBase64
             ? [
                 { text: 'Extract concepts from this PDF document.' },
@@ -54,6 +54,29 @@ Use options only for MCQ. Difficulty must be an integer from 1 through 5. Ground
         JSON.stringify({ concepts })
     );
     return Array.isArray(result?.data?.questions) ? result : null;
+};
+
+export const mergeConceptsWithAi = async (concepts) => {
+    const result = await requestJson(
+        `Combine the two supplied study concepts into one clear concept. Return only JSON:
+{"title":"string","definition":"string","facts":["string"],"tags":["string"]}.
+Keep only information grounded in the supplied concepts. Do not mention that a merge occurred.`,
+        JSON.stringify({ concepts })
+    );
+
+    if (result?.data?.title && result?.data?.definition) return result;
+
+    const [first, second] = concepts;
+    return {
+        data: {
+            title: `${first.title} and ${second.title}`,
+            definition: `${first.definition ?? ''} ${second.definition ?? ''}`.trim(),
+            facts: [...(first.facts ?? []), ...(second.facts ?? [])].slice(0, 8),
+            tags: [...new Set([...(first.tags ?? []), ...(second.tags ?? [])])]
+        },
+        model: 'deterministic-local-v1',
+        responseId: null
+    };
 };
 
 export const gradeShortAnswerWithAi = async ({ question, expectedAnswer, userAnswer }) => {

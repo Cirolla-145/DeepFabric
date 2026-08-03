@@ -39,14 +39,14 @@ Each endpoint scopes its result through the authenticated user. Nested resources
 ## Additional backend workflows
 
 - `POST /api/learning/sources/:sourceId/process` runs the deterministic local concept-extraction mock. It creates a provenance-linked AI run and suggested concepts for the current source version.
-- `PATCH /api/learning/concepts/:conceptId/merge` accepts `target_concept_id`; active questions move to the target while the source concept and its mastery history remain as merged historical data.
+- `PATCH /api/learning/concepts/:conceptId/merge` accepts `target_concept_id`; active questions move to the target and the source concept remains visible as merged historical context. The target concept's mastery is recalculated after the merge.
 - `POST /api/learning/modules/:moduleId/questions/regenerate` accepts an optional candidate `questions` array. Without it, the deterministic local mock creates one short-answer question per active concept and records a question-generation AI run. Generated questions are updated by content hash; approved and manually edited questions are preserved; obsolete generated questions are retired.
 - `POST /api/learning/study-sessions` accepts `question_count`, `question_types`, and `focus_mode`. It persists the selected question versions in `study_session_questions`.
 - `GET /api/learning/study-sessions/:sessionId/questions` returns the selected quiz questions without answers; `PATCH /api/learning/study-sessions/:sessionId/end` ends the session.
 - `GET /api/learning/search?q=<text>` searches active concepts and questions.
 - `GET /api/learning/modules/:moduleId/insights` returns mastery distribution, seven-day accuracy trend, and weak concepts.
 - `GET /api/learning/modules/:moduleId/ai-runs` returns AI model, prompt, input/output metadata, and timestamps for the module.
-- `GET /api/learning/modules/:moduleId/audit-logs` returns user actions and before/after snapshots for the module.
+- `GET /api/learning/modules/:moduleId/audit-logs` returns user actions and before/after snapshots for the module, including source versioning, concept review/merge, question generation/editing, AI grades, overrides, and mastery recalculations.
 
 Organisation names, descriptions, and tags can be edited with `PATCH /api/content/workspaces/:workspaceId`, `PATCH /api/content/subjects/:subjectId`, and `PATCH /api/content/modules/:moduleId`.
 
@@ -67,14 +67,14 @@ The due endpoint only returns active, current concepts and includes score, bucke
 
 ## Integrity rules
 
-- Editing a source creates a new immutable source version and marks derived concepts outdated; it never overwrites user-reviewed content.
+- Editing a pasted source creates a new immutable source version, increments its version number, and marks derived concepts outdated; it never overwrites user-reviewed content. Reprocess the latest source version to create new suggestions, then review them.
 - Questions use a content hash scoped to their module to prevent identical duplicates. Manual question edits create an immutable question version and are never silently replaced.
-- Attempts keep the exact question-version reference used at the time of answering. Grades, overrides, and mastery recalculations write audit log entries.
+- Regeneration updates only matching generated questions, preserves approved/edited questions, and retires generated questions that are no longer proposed. Attempts keep the exact question-version used at the time of answering. Grades, overrides, and mastery recalculations write audit log entries.
 - AI outputs are stored as `ai_runs` with model, prompt version, input, and output. AI content is treated as a suggestion: concepts and questions require user review, and short-answer grading exposes its rationale and confidence for correction.
 
 ## Current limitations
 
-The backend uses Google's official Gemini Node SDK when `GEMINI_API_KEY` is configured. It calls Gemini for concept extraction, question generation, and short-answer grading, while retaining a deterministic local fallback when no key is available. The frontend is currently only scaffolded; the review and dashboard UI is the next implementation area.
+The backend uses Google's official Gemini Node SDK when `GEMINI_API_KEY` is configured. It calls Gemini for concept extraction, question generation, and short-answer grading, while retaining a deterministic local fallback when no key is available. The frontend includes the core source, concept, question, study, insight, and audit flows. A user-facing grade-override form and configurable session mix/count are the remaining review UI enhancements.
 
 ## Tests
 
