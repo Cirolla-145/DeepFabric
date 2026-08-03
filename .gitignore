@@ -1,0 +1,5 @@
+**/node_modules/
+backend/.env
+.pdf-tools/
+.tmp-pdf-extractor/
+frontend/dist/
