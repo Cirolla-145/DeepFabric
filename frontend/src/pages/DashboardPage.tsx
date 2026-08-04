@@ -22,15 +22,15 @@ import {
 } from "../redux/contentSlice";
 
 export function DashboardPage() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  
   const dispatch = useDispatch<any>();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  
   const authUser = useSelector((state: any) => state.userLogin.currentUser);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  
   const workspaces = useSelector((state: any) => state.content.workspaces);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  
   const subjects = useSelector((state: any) => state.content.subjects);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  
   const modules = useSelector((state: any) => state.content.modules);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
   const [selectedSubjectId, setSelectedSubjectId] = useState("");
@@ -60,7 +60,7 @@ export function DashboardPage() {
   };
 
   useEffect(() => {
-    void loadWorkspaces(); // eslint-disable-next-line react-hooks/exhaustive-deps
+    void loadWorkspaces(); 
   }, []);
 
   const selectWorkspace = (workspaceId: string) => {

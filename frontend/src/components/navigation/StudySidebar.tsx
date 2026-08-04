@@ -16,13 +16,7 @@ type SidebarProps = {
   onModuleCreate: (name: string, description: string) => Promise<void>;
 };
 
-function AddItemForm({
-  label,
-  onSubmit,
-}: {
-  label: string;
-  onSubmit: (name: string, description: string) => Promise<void>;
-}) {
+function AddItemForm({label,onSubmit,}: {label: string; onSubmit: (name: string, description: string) => Promise<void>;}) {
   const [isOpen, setIsOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -119,7 +113,7 @@ export function StudySidebar(props: SidebarProps) {
                 type="button"
               >
                 <span className="text-slate-400">
-                  {workspace.id === props.selectedWorkspaceId ? "⌄" : "›"}
+                  {workspace.id === props.selectedWorkspaceId ? "▾" : "▸"}
                 </span>
                 {workspace.name}
               </button>
@@ -141,7 +135,7 @@ export function StudySidebar(props: SidebarProps) {
                   type="button"
                 >
                   <span className="text-slate-400">
-                    {subject.id === props.selectedSubjectId ? "⌄" : "›"}
+                    {subject.id === props.selectedSubjectId ? "▾" : "▸"}
                   </span>
                   {subject.name}
                 </button>
@@ -163,15 +157,6 @@ export function StudySidebar(props: SidebarProps) {
                   onClick={() => props.onModuleSelect(module.id)}
                   type="button"
                 >
-                  <span
-                    className={
-                      module.id === props.selectedModuleId
-                        ? "text-slate-400"
-                        : "text-slate-400"
-                    }
-                  >
-                    □
-                  </span>
                   {module.name}
                 </button>
               ))}

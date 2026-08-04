@@ -2,7 +2,7 @@ import { createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import axios from 'axios'
 import { api } from '../api/client'
 
-// This backend authenticates with an HTTP-only cookie, so no token is saved in localStorage.
+
 export const restoreSessionThunk = createAsyncThunk('user-login/restore-session', async (_, thunkApi) => {
   try {
     const response = await api.get('/auth/me')

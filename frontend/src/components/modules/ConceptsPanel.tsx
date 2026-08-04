@@ -43,7 +43,7 @@ export function ConceptsPanel({
   const activeConcepts = visibleConcepts;
 
   const loadConceptVersions = async (conceptId: string) => {
-    if (conceptVersions[conceptId]) return;
+    // if (conceptVersions[conceptId]) return;
     try {
       const history = await getConceptVersions(conceptId);
       setConceptVersions((current) => ({ ...current, [conceptId]: history }));
@@ -182,6 +182,7 @@ export function ConceptsPanel({
                     </span>
                   </div>
                   {(() => {
+                    loadConceptVersions(concept.id)
                     const history = conceptVersions[concept.id];
                     const currentVersion = history?.current_version ?? 1;
                     const viewedVersion =
@@ -189,6 +190,7 @@ export function ConceptsPanel({
                     const viewedConcept = history?.versions.find(
                       (version) => version.version === viewedVersion,
                     );
+                    
                     return (
                       <div className="mt-3">
                         <select
@@ -199,7 +201,7 @@ export function ConceptsPanel({
                               [concept.id]: Number(event.target.value),
                             }))
                           }
-                          onFocus={() => void loadConceptVersions(concept.id)}
+                          // onFocus={() => void loadConceptVersions(concept.id)}
                           value={viewedVersion}
                         >
                           {(

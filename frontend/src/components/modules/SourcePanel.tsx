@@ -116,7 +116,7 @@ export function SourcePanel({
     setIsWorking(true);
     try {
       await processSource(sourceId);
-      await onSourcesChanged();
+      // await onSourcesChanged();
       await onProcessed();
       onMessage("Concept suggestions are ready for review.");
     } catch {
@@ -134,7 +134,7 @@ export function SourcePanel({
   };
 
   const loadSourceVersions = async (sourceId: string) => {
-    if (sourceVersions[sourceId]) return;
+    // if (sourceVersions[sourceId]) return;
     try {
       const versions = await getSourceVersions(sourceId);
       setSourceVersions((current) => ({ ...current, [sourceId]: versions }));
@@ -151,14 +151,19 @@ export function SourcePanel({
 
     setIsWorking(true);
     try {
-      await createSourceVersion(sourceId, editedText.trim());
-      setEditingSourceId(null);
-      setEditedText("");
-      await onSourcesChanged();
-      await onProcessed();
-      onMessage(
-        "Version saved. Existing concepts are marked outdated until you process and review the new version.",
-      );
+      if (text.trim() != editedText.trim()) {
+        await createSourceVersion(sourceId, editedText.trim());
+        setEditingSourceId(null);
+        setEditedText("");
+        await onSourcesChanged();
+        await onProcessed();
+        onMessage(
+          "Version saved. Existing concepts are marked outdated until you process and review the new version.",
+        )
+      } else {
+        onMessage("You didn't edited the source")
+      }
+
     } catch {
       onMessage("Unable to save this source version.");
     } finally {
@@ -254,7 +259,7 @@ export function SourcePanel({
                     <p className="font-semibold">{source.title}</p>
                     <p className="mt-1 text-xs text-slate-500">
                       {source.source_type.toUpperCase()} · Version{" "}
-                      {source.current_version} · {source.status}
+                      {source.current_version} · {source.status == "needs_review" ? '' : source.status}
                     </p>
                     <select
                       className="mt-2 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"

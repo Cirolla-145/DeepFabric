@@ -7,11 +7,11 @@ import { userLoginThunk } from '../../redux/authSlice'
 type LoginValues = { email: string; password: string }
 
 export function Login() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  
   const authUser = useSelector((state: any) => state.userLogin.currentUser)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  
   const loading = useSelector((state: any) => state.userLogin.isPending)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  
   const dispatch = useDispatch<any>()
   const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
