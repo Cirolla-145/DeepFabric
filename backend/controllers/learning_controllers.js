@@ -294,7 +294,11 @@ export const createSource = async (req, res) => {
         }
         if (source_url) {
             let url;
-            try { url = new URL(source_url); } catch { return res.status(400).json({ message: 'Provide a valid public URL' }); }
+            try { 
+                url = new URL(source_url); 
+            } catch { 
+                return res.status(400).json({ message: 'Provide a valid public URL' }); 
+            }
             if (!['http:', 'https:'].includes(url.protocol)) {
                 return res.status(400).json({ message: 'Only http and https URLs are supported' });
             }
