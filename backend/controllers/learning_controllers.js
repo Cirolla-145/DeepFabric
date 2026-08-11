@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import executeQuery from '../db/runQuery.js';
+import executeQuery from '../services/db/runQuery.js';
 import {
     extractConceptsWithAi,
     generateQuestionsWithAi,
