@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   getConceptVersions,
   mergeConcepts,
@@ -6,6 +6,13 @@ import {
   type Concept,
   type ConceptVersion,
 } from "../../api/learningApi";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 
 type ConceptsPanelProps = {
   concepts: Concept[];
@@ -17,6 +24,20 @@ type ConceptsPanelProps = {
   ) => void;
   onMessage: (message: string) => void;
 };
+
+function conceptStatusStyle(concept: Concept) {
+  if (concept.is_outdated) return "bg-amber-50 text-amber-700";
+  if (concept.status === "suggested") return "bg-indigo-50 text-indigo-700";
+  if (concept.status === "merged") return "bg-violet-50 text-violet-700";
+  if (concept.status === "accepted") return "bg-emerald-50 text-emerald-700";
+  return "bg-slate-100 text-slate-600";
+}
+
+function conceptModalElement(conceptId: string) {
+  return document.getElementById(
+    `concept-modal-${conceptId}`,
+  ) as HTMLDialogElement | null;
+}
 
 export function ConceptsPanel({
   concepts,
@@ -43,7 +64,7 @@ export function ConceptsPanel({
   const activeConcepts = visibleConcepts;
 
   const loadConceptVersions = async (conceptId: string) => {
-    // if (conceptVersions[conceptId]) return;
+    if (conceptVersions[conceptId]) return;
     try {
       const history = await getConceptVersions(conceptId);
       setConceptVersions((current) => ({ ...current, [conceptId]: history }));
@@ -51,6 +72,10 @@ export function ConceptsPanel({
       onMessage("Unable to load concept version history.");
     }
   };
+
+  useEffect(() => {
+    concepts.forEach((concept) => void loadConceptVersions(concept.id));
+  }, [concepts]);
 
   const applyReview = async (
     conceptId: string,
@@ -62,6 +87,14 @@ export function ConceptsPanel({
         conceptId,
         action === "edit" ? { action, title, definition } : { action },
       );
+      if (action === "edit") {
+        const history = await getConceptVersions(conceptId);
+        setConceptVersions((current) => ({ ...current, [conceptId]: history }));
+        setSelectedVersion((current) => ({
+          ...current,
+          [conceptId]: history.current_version,
+        }));
+      }
       setEditingId(null);
       onConceptUpdated(conceptId, {
         ...(action === "edit" ? { title, definition } : {}),
@@ -116,7 +149,7 @@ export function ConceptsPanel({
   };
 
   return (
-    <div className="max-w-4xl">
+    <div className="w-full max-w-none">
       <div className="flex items-end justify-between gap-4">
         <div>
           <p className="text-sm font-semibold text-indigo-600">
@@ -131,13 +164,52 @@ export function ConceptsPanel({
           </p>
         </div>
       </div>
-      <div className="mt-6 space-y-3">
+      <div className="mt-6 grid auto-rows-[14rem] grid-cols-[repeat(auto-fit,minmax(15rem,1fr))] gap-4 sm:auto-rows-[15rem] sm:grid-cols-[repeat(auto-fit,minmax(16rem,1fr))] sm:gap-5">
         {visibleConcepts.length ? (
           visibleConcepts.map((concept) => (
-            <article
-              className="rounded-2xl border border-slate-200 bg-white p-5"
-              key={concept.id}
-            >
+            <div key={concept.id}>
+              <article className="card h-full border border-slate-200 bg-linear-to-br from-white to-slate-50 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+                <div className="card-body justify-between p-5">
+                  <div>
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${conceptStatusStyle(concept)}`}
+                    >
+                      {concept.is_outdated ? "outdated" : concept.status}
+                    </span>
+                    <h3 className="card-title mt-4 line-clamp-3 text-base leading-6 text-slate-900">
+                      {concept.title}
+                    </h3>
+                  </div>
+                  <div className="card-actions justify-end">
+                    <button
+                      className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
+                      onClick={() => {
+                        setEditingId(null);
+                        void loadConceptVersions(concept.id);
+                        const dialog = document.getElementById(
+                          `concept-modal-${concept.id}`,
+                        ) as HTMLDialogElement | null;
+                        dialog?.showModal();
+                      }}
+                      type="button"
+                    >
+                      Explain
+                    </button>
+                  </div>
+                </div>
+              </article>
+              <dialog className="modal" id={`concept-modal-${concept.id}`}>
+                <div className="modal-box max-h-[85vh] w-[calc(100%-1rem)] max-w-3xl overflow-x-hidden overflow-y-auto border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl sm:w-11/12">
+                  <form method="dialog">
+                    <button
+                      aria-label="Close concept details"
+                      className="absolute right-4 top-4 rounded-full p-2 text-xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                      type="submit"
+                    >
+                      ✕
+                    </button>
+                  </form>
+                  <article className="p-5 sm:p-7">
               {editingId === concept.id ? (
                 <>
                   <input
@@ -146,7 +218,7 @@ export function ConceptsPanel({
                     value={title}
                   />
                   <textarea
-                    className="mt-3 min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-500"
+                    className="mt-3 min-h-64 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm leading-6 outline-none focus:border-indigo-500"
                     onChange={(event) => setDefinition(event.target.value)}
                     value={definition}
                   />
@@ -170,7 +242,7 @@ export function ConceptsPanel({
                 </>
               ) : (
                 <>
-                  <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start justify-between gap-4 pr-12">
                     <div>
                       <h3 className="font-bold">{concept.title}</h3>
                       <p className="mt-2 text-sm leading-6 text-slate-600">
@@ -182,7 +254,6 @@ export function ConceptsPanel({
                     </span>
                   </div>
                   {(() => {
-                    loadConceptVersions(concept.id)
                     const history = conceptVersions[concept.id];
                     const currentVersion = history?.current_version ?? 1;
                     const viewedVersion =
@@ -193,38 +264,40 @@ export function ConceptsPanel({
                     
                     return (
                       <div className="mt-3">
-                        <select
-                          className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
-                          onChange={(event) =>
+                        <Select
+                          onValueChange={(value) =>
                             setSelectedVersion((current) => ({
                               ...current,
-                              [concept.id]: Number(event.target.value),
+                              [concept.id]: Number(value),
                             }))
                           }
-                          // onFocus={() => void loadConceptVersions(concept.id)}
-                          value={viewedVersion}
+                          value={String(viewedVersion)}
                         >
-                          {(
-                            history?.versions ?? [
+                          <SelectTrigger size="sm">
+                            <SelectValue>
+                              Version {viewedVersion}
+                              {viewedVersion === currentVersion ? " (current)" : ""}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent
+                            className="max-h-64"
+                            portalContainer={conceptModalElement(concept.id)}
+                          >
+                            {(history?.versions ?? [
                               {
                                 version: 1,
                                 title: concept.title,
                                 definition: concept.definition,
                                 created_at: "",
                               },
-                            ]
-                          ).map((version) => (
-                            <option
-                              key={version.version}
-                              value={version.version}
-                            >
-                              Version {version.version}
-                              {version.version === currentVersion
-                                ? " (current)"
-                                : ""}
-                            </option>
-                          ))}
-                        </select>
+                            ]).map((version) => (
+                              <SelectItem key={version.version} value={String(version.version)}>
+                                Version {version.version}
+                                {version.version === currentVersion ? " (current)" : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         {viewedConcept && viewedVersion !== currentVersion && (
                           <div className="mt-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
                             <p className="font-semibold text-slate-800">
@@ -274,42 +347,61 @@ export function ConceptsPanel({
                           Reject
                         </button>
                       </div>
-                      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+                      <div className="mt-5 border-t border-slate-100 pt-5">
                         <label className="text-xs font-semibold text-slate-500">
                           Merge into
                         </label>
-                        <select
-                          className="rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm"
-                          onChange={(event) =>
-                            setMergeTargetId((current) => ({
-                              ...current,
-                              [concept.id]: event.target.value,
-                            }))
-                          }
-                          value={mergeTargetId[concept.id] ?? ""}
-                        >
-                          <option value="">Choose a concept</option>
-                          {activeConcepts
-                            .filter((target) => target.id !== concept.id)
-                            .map((target) => (
-                              <option key={target.id} value={target.id}>
-                                {target.title}
-                              </option>
-                            ))}
-                        </select>
-                        <button
-                          className="rounded-lg border border-indigo-200 px-3 py-2 text-sm font-semibold text-indigo-700 disabled:opacity-50"
-                          disabled={isWorking}
-                          onClick={() => void mergeInto(concept.id)}
-                          type="button"
-                        >
-                          Merge
-                        </button>
+                        <div className="mt-2 flex min-w-0 flex-col gap-2 sm:flex-row">
+                          <Select
+                            onValueChange={(value) =>
+                              setMergeTargetId((current) => ({
+                                ...current,
+                                [concept.id]: value ?? "",
+                              }))
+                            }
+                            value={mergeTargetId[concept.id] || undefined}
+                          >
+                            <SelectTrigger className="min-w-0 flex-1">
+                              <SelectValue placeholder="Choose a concept">
+                                {
+                                  activeConcepts.find(
+                                    (target) =>
+                                      target.id === mergeTargetId[concept.id],
+                                  )?.title
+                                }
+                              </SelectValue>
+                            </SelectTrigger>
+                          <SelectContent
+                            className="max-h-64"
+                            portalContainer={conceptModalElement(concept.id)}
+                            side="top"
+                            >
+                              {activeConcepts
+                                .filter((target) => target.id !== concept.id)
+                                .map((target) => (
+                                  <SelectItem key={target.id} value={target.id}>
+                                    {target.title}
+                                  </SelectItem>
+                                ))}
+                            </SelectContent>
+                          </Select>
+                          <button
+                            className="shrink-0 rounded-lg border border-indigo-200 px-4 py-2 text-sm font-semibold text-indigo-700 disabled:opacity-50"
+                            disabled={isWorking}
+                            onClick={() => void mergeInto(concept.id)}
+                            type="button"
+                          >
+                            Merge
+                          </button>
+                        </div>
                       </div>
                   </>
                 </>
               )}
-            </article>
+                  </article>
+                </div>
+              </dialog>
+            </div>
           ))
         ) : (
           <p className="rounded-2xl bg-white p-5 text-sm text-slate-500">

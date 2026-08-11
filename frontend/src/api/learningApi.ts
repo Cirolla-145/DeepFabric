@@ -40,6 +40,16 @@ export type Question = {
   difficulty: number;
   status: string;
   concept_title: string;
+  current_version: number;
+};
+
+export type QuestionVersion = {
+  id: string;
+  version: number;
+  question_text: string;
+  question_type: string;
+  difficulty: number;
+  created_at: string;
 };
 
 export type AuditLog = {
@@ -49,6 +59,19 @@ export type AuditLog = {
   old_value: unknown;
   new_value: unknown;
   created_at: string;
+};
+
+export type HomeInsights = {
+  has_activity: boolean;
+  total_sessions: number;
+  total_correct: number;
+  attempt_counts: { correct: number; incorrect: number; partial: number };
+  difficulty_counts: { easy: number; medium: number; hard: number };
+  activity: Array<{
+    date: string;
+    sessions: number;
+    correct_answers: number;
+  }>;
 };
 
 export type StudyQuestion = {
@@ -194,6 +217,14 @@ export async function getModuleQuestions(moduleId: string) {
   return response.data.questions;
 }
 
+export async function getQuestionVersions(questionId: string) {
+  const response = await api.get<{
+    current_version: number;
+    versions: QuestionVersion[];
+  }>(`/learning/questions/${questionId}/versions`);
+  return response.data;
+}
+
 export async function reviewQuestion(
   questionId: string,
   question: {
@@ -266,4 +297,9 @@ export async function getModuleAuditLogs(moduleId: string) {
     `/learning/modules/${moduleId}/audit-logs`,
   );
   return response.data.audit_logs;
+}
+
+export async function getHomeInsights() {
+  const response = await api.get<HomeInsights>("/learning/home-insights");
+  return response.data;
 }

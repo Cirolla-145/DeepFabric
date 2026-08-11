@@ -8,6 +8,25 @@ import {
   type StudyQuestion,
   type StudySession,
 } from "../../api/learningApi";
+import {
+  Questionnaire,
+  QuestionnaireActions,
+  QuestionnaireChoice,
+  QuestionnaireChoices,
+  QuestionnaireError,
+  QuestionnaireInput,
+  QuestionnaireItem,
+  QuestionnaireSubmit,
+  QuestionnaireTitle,
+} from "../ui/questionnaire";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
+import { Spinner } from "../ui/spinner";
 
 type AttemptSummary = {
   question: StudyQuestion;
@@ -129,11 +148,11 @@ export function QuestionPlayer({
   if (isComplete) {
     const masteredConcepts = attempts.map((attempt) => attempt.grade.mastery);
     return (
-      <section className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+      <section className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-7">
         <p className="text-sm font-semibold text-indigo-600">
           SESSION COMPLETE
         </p>
-        <h2 className="mt-1 text-3xl font-bold">Your results are ready.</h2>
+        <h2 className="mt-1 text-2xl font-bold sm:text-3xl">Your results are ready.</h2>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <div className="rounded-2xl bg-slate-950 p-5 text-white">
             <p className="text-sm text-slate-300">Session score</p>
@@ -159,10 +178,10 @@ export function QuestionPlayer({
         <div className="mt-6 space-y-2">
           {attempts.map((attempt, index) => (
             <div
-              className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3 text-sm"
+              className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm"
               key={attempt.grade.attempt.id}
             >
-              <span>
+              <span className="min-w-0 flex-1 truncate">
                 {index + 1}. {attempt.question.concept_title}
               </span>
               <span
@@ -193,11 +212,13 @@ export function QuestionPlayer({
   const options = parseOptions(currentQuestion.options);
   return (
     <section className="mx-auto max-w-3xl">
-      <div className="flex items-center justify-between text-sm font-semibold text-slate-500">
+      <div className="flex items-start justify-between gap-3 text-sm font-semibold text-slate-500">
         <span>
           Question {questionIndex + 1} of {questions.length}
         </span>
-        <span>{currentQuestion.concept_title}</span>
+        <span className="max-w-[55%] text-right leading-5">
+          {currentQuestion.concept_title}
+        </span>
       </div>
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
         <div
@@ -207,11 +228,11 @@ export function QuestionPlayer({
           }}
         />
       </div>
-      <article className="mt-6 rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+      <article className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-7">
         <p className="text-xs font-bold uppercase tracking-[0.12em] text-indigo-600">
           {currentQuestion.question_type.replace("_", " ")}
         </p>
-        <h2 className="mt-3 text-2xl font-bold leading-9">
+        <h2 className="mt-3 text-xl font-bold leading-8 sm:text-2xl sm:leading-9">
           {currentQuestion.question_text}
         </h2>
         {currentGrade ? (
@@ -231,19 +252,21 @@ export function QuestionPlayer({
             {showOverride ? (
               <div className="mt-4 rounded-xl border border-slate-200 bg-white/70 p-4">
                 <p className="text-sm font-semibold">Override AI grade</p>
-                <select
-                  className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
-                  onChange={(event) =>
-                    setOverrideResult(
-                      event.target.value as "correct" | "partial" | "incorrect",
-                    )
+                <Select
+                  onValueChange={(value) =>
+                    setOverrideResult(value as "correct" | "partial" | "incorrect")
                   }
                   value={overrideResult}
                 >
-                  <option value="correct">Correct</option>
-                  <option value="partial">Partial</option>
-                  <option value="incorrect">Incorrect</option>
-                </select>
+                  <SelectTrigger className="mt-3">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="correct">Correct</SelectItem>
+                    <SelectItem value="partial">Partial</SelectItem>
+                    <SelectItem value="incorrect">Incorrect</SelectItem>
+                  </SelectContent>
+                </Select>
                 <textarea
                   className="mt-3 min-h-20 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                   onChange={(event) => setOverrideReason(event.target.value)}
@@ -292,36 +315,76 @@ export function QuestionPlayer({
           </div>
         ) : (
           <>
-            <div className="mt-6 space-y-3">
-              {options.length ? (
-                options.map((option) => (
-                  <button
-                    className={`w-full rounded-xl border px-4 py-3 text-left text-sm font-medium transition ${answer === option ? "border-indigo-500 bg-indigo-50 text-indigo-950" : "border-slate-200 hover:border-slate-300"}`}
-                    key={option}
-                    onClick={() => setAnswer(option)}
-                    type="button"
-                  >
-                    {option}
-                  </button>
-                ))
-              ) : (
+            {currentQuestion.question_type === "short_answer" ? (
+              <form
+                className="mt-6"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void submitAnswer();
+                }}
+              >
                 <textarea
-                  className="min-h-36 w-full rounded-xl border border-slate-200 px-3 py-3 text-sm leading-6 outline-none focus:border-indigo-500"
+                  className="min-h-32 w-full resize-y rounded-lg border border-input bg-transparent px-3 py-2 text-sm shadow-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                   onChange={(event) => setAnswer(event.target.value)}
-                  placeholder="Write your answer…"
+                  placeholder="Write your answer"
+                  rows={5}
                   value={answer}
                 />
-              )}
-            </div>
-            {error && <p className="mt-4 text-sm text-rose-700">{error}</p>}
-            <button
-              className="mt-6 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-              disabled={isSubmitting || !answer.trim()}
-              onClick={() => void submitAnswer()}
-              type="button"
+                <div className="mt-4 flex justify-end">
+                  <button
+                    className="rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+                    disabled={isSubmitting || !answer.trim()}
+                    type="submit"
+                  >
+                    {isSubmitting && <Spinner />}
+                    {isSubmitting ? "Grading..." : "Submit answer"}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <Questionnaire
+              className="mt-6"
+              key={currentQuestion.id}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitAnswer();
+              }}
             >
-              {isSubmitting ? "Grading…" : "Submit answer"}
-            </button>
+              <QuestionnaireItem name="answer" required>
+                <QuestionnaireTitle className="sr-only">
+                  Your answer
+                </QuestionnaireTitle>
+                {options.length ? (
+                  <QuestionnaireChoices>
+                    {options.map((option) => (
+                      <QuestionnaireChoice
+                        checked={answer === option}
+                        key={option}
+                        onChange={() => setAnswer(option)}
+                        value={option}
+                      >
+                        {option}
+                      </QuestionnaireChoice>
+                    ))}
+                  </QuestionnaireChoices>
+                ) : (
+                  <QuestionnaireInput
+                    onChange={(event) => setAnswer(event.target.value)}
+                    placeholder="Write your answer"
+                    value={answer}
+                  />
+                )}
+                <QuestionnaireError />
+              </QuestionnaireItem>
+              <QuestionnaireActions>
+                <QuestionnaireSubmit disabled={isSubmitting || !answer.trim()}>
+                  {isSubmitting && <Spinner />}
+                  {isSubmitting ? "Grading…" : "Submit answer"}
+                </QuestionnaireSubmit>
+              </QuestionnaireActions>
+              </Questionnaire>
+            )}
+            {error && <p className="mt-4 text-sm text-rose-700">{error}</p>}
           </>
         )}
       </article>

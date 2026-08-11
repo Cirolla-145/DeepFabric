@@ -1,5 +1,17 @@
-import { useState } from "react";
-import { reviewQuestion, type Question } from "../../api/learningApi";
+import { useEffect, useRef, useState } from "react";
+import {
+  getQuestionVersions,
+  reviewQuestion,
+  type Question,
+  type QuestionVersion,
+} from "../../api/learningApi";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 
 type QuestionsPanelProps = {
   questions: Question[];
@@ -20,6 +32,16 @@ export function QuestionsPanel({
   const [questionText, setQuestionText] = useState("");
   const [difficulty, setDifficulty] = useState(3);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [questionVersions, setQuestionVersions] = useState<
+    Record<string, { current_version: number; versions: QuestionVersion[] }>
+  >({});
+  const [selectedVersion, setSelectedVersion] = useState<Record<string, number>>(
+    {},
+  );
+  const questionListRef = useRef<HTMLDivElement>(null);
+  const [focusedQuestionId, setFocusedQuestionId] = useState<string | null>(
+    null,
+  );
   const activeQuestions = questions.filter(
     (question) => question.status !== "retired",
   );
@@ -36,9 +58,21 @@ export function QuestionsPanel({
           ? { action, question_text: questionText, difficulty }
           : { action },
       );
+      let currentVersion: number | undefined;
+      if (action === "edit") {
+        const history = await getQuestionVersions(questionId);
+        currentVersion = history.current_version;
+        setQuestionVersions((current) => ({ ...current, [questionId]: history }));
+        setSelectedVersion((current) => ({
+          ...current,
+          [questionId]: history.current_version,
+        }));
+      }
       setEditingId(null);
       onQuestionUpdated(questionId, {
-        ...(action === "edit" ? { question_text: questionText, difficulty } : {}),
+        ...(action === "edit"
+          ? { question_text: questionText, difficulty, current_version: currentVersion }
+          : {}),
         status: action === "approve" ? "approved" : action === "retire" ? "retired" : "edited",
       });
       onMessage(
@@ -57,9 +91,43 @@ export function QuestionsPanel({
     setDifficulty(question.difficulty);
   };
 
+  const loadQuestionVersions = async (questionId: string) => {
+    if (questionVersions[questionId]) return;
+
+    try {
+      const history = await getQuestionVersions(questionId);
+      setQuestionVersions((current) => ({ ...current, [questionId]: history }));
+    } catch {
+      onMessage("Unable to load question version history.");
+    }
+  };
+
+  useEffect(() => {
+    questions.forEach((question) => void loadQuestionVersions(question.id));
+  }, [questions]);
+
+  useEffect(() => {
+    setFocusedQuestionId(activeQuestions[0]?.id ?? null);
+  }, [questions]);
+
+  const updateFocusedQuestion = () => {
+    const list = questionListRef.current;
+    if (!list) return;
+
+    const listTop = list.getBoundingClientRect().top;
+    const cards = Array.from(
+      list.querySelectorAll<HTMLElement>("[data-question-id]"),
+    );
+    const firstVisibleCard = cards.find(
+      (card) => card.getBoundingClientRect().bottom > listTop,
+    );
+
+    setFocusedQuestionId(firstVisibleCard?.dataset.questionId ?? null);
+  };
+
   return (
     <div className="max-w-4xl">
-      <div className="flex items-end justify-between gap-4">
+      <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-indigo-600">
             QUESTION REVIEW
@@ -69,9 +137,9 @@ export function QuestionsPanel({
             Generate suggestions, then approve, edit, or retire each question.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex w-full gap-2 sm:w-auto">
           <button
-            className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+            className="w-full rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50 sm:w-auto"
             disabled={isGenerating}
             onClick={() => void onGenerate()}
             type="button"
@@ -80,11 +148,20 @@ export function QuestionsPanel({
           </button>
         </div>
       </div>
-      <div className="mt-6 space-y-3">
+      <div
+        className="mt-6 max-h-[70vh] snap-y snap-mandatory space-y-5 overflow-y-auto px-2 pt-2 pb-[40vh] sm:px-5"
+        onScroll={updateFocusedQuestion}
+        ref={questionListRef}
+      >
         {activeQuestions.length ? (
           activeQuestions.map((question) => (
             <article
-              className="rounded-2xl border border-slate-200 bg-white p-5"
+              className={`snap-start snap-always rounded-2xl border bg-white p-4 transition-all duration-300 sm:p-5 ${
+                focusedQuestionId === question.id
+                  ? "scale-100 border-indigo-200 shadow-lg"
+                  : "scale-[0.94] border-slate-200 opacity-55"
+              }`}
+              data-question-id={question.id}
               key={question.id}
             >
               {editingId === question.id ? (
@@ -137,6 +214,64 @@ export function QuestionsPanel({
                   <h3 className="mt-2 font-semibold">
                     {question.question_text}
                   </h3>
+                  {(() => {
+                    const history = questionVersions[question.id];
+                    const currentVersion =
+                      history?.current_version ?? question.current_version ?? 1;
+                    const viewedVersion =
+                      selectedVersion[question.id] ?? currentVersion;
+                    const viewedQuestion = history?.versions.find(
+                      (version) => version.version === viewedVersion,
+                    );
+
+                    return (
+                      <div className="mt-3">
+                        <Select
+                          onValueChange={(value) =>
+                            setSelectedVersion((current) => ({
+                              ...current,
+                              [question.id]: Number(value),
+                            }))
+                          }
+                          value={String(viewedVersion)}
+                        >
+                          <SelectTrigger size="sm">
+                            <SelectValue>
+                              Version {viewedVersion}
+                              {viewedVersion === currentVersion ? " (current)" : ""}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {(history?.versions ?? [
+                              {
+                                id: question.id,
+                                version: currentVersion,
+                                question_text: question.question_text,
+                                question_type: question.question_type,
+                                difficulty: question.difficulty,
+                                created_at: "",
+                              },
+                            ]).map((version) => (
+                              <SelectItem key={version.id} value={String(version.version)}>
+                                Version {version.version}
+                                {version.version === currentVersion ? " (current)" : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {viewedQuestion && viewedVersion !== currentVersion && (
+                          <div className="mt-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
+                            <p className="font-semibold text-slate-800">
+                              {viewedQuestion.question_text}
+                            </p>
+                            <p className="mt-1 text-xs">
+                              {viewedQuestion.question_type} · Level {viewedQuestion.difficulty}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <div className="mt-4 flex flex-wrap items-center gap-2">
                     <span className="mr-2 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
                       {question.status}

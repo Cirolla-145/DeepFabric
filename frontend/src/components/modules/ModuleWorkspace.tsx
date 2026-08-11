@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import type { Module } from "../../api/contentApi";
 import {
   generateQuestions,
@@ -18,9 +18,13 @@ import {
 } from "../../api/learningApi";
 import { AuditPanel } from "./AuditPanel";
 import { ConceptsPanel } from "./ConceptsPanel";
+import { Pie } from "./pie";
 import { QuestionsPanel } from "./QuestionsPanel";
 import { QuestionPlayer } from "./QuestionPlayer";
 import { SourcePanel } from "./SourcePanel";
+import { Button } from "../ui/button";
+import { Spinner } from "../ui/spinner";
+import { Tabs, TabsList, TabsTrigger } from "../ui/tabs";
 
 type Tab =
   | "sources"
@@ -38,6 +42,44 @@ const tabs: Array<{ id: Tab; label: string }> = [
   { id: "insights", label: "Insights" },
   { id: "audit", label: "Audit" },
 ];
+
+function MasteryProgress({
+  score,
+  color = "text-blue-600",
+  size = "2.5rem",
+}: {
+  score: number | null;
+  color?: string;
+  size?: string;
+}) {
+  const value = Math.max(0, Math.min(100, Number(score) || 0));
+
+  return (
+    <div
+      aria-valuenow={value}
+      className={`radial-progress text-xs font-bold ${color}`}
+      role="progressbar"
+      style={
+        {
+          "--value": value,
+          "--size": size,
+          "--thickness": "0.3rem",
+        } as CSSProperties
+      }
+    >
+      {value}%
+    </div>
+  );
+}
+
+function masteryLabel(score: number | null) {
+  const value = Number(score) || 0;
+
+  if (value < 30) return "Needs practice";
+  if (value < 60) return "Learning";
+  if (value < 80) return "Proficient";
+  return "Mastered";
+}
 
 export function ModuleWorkspace({ module }: { module: Module | null }) {
   const [activeTab, setActiveTab] = useState<Tab>("sources");
@@ -103,11 +145,25 @@ export function ModuleWorkspace({ module }: { module: Module | null }) {
   };
 
   useEffect(() => {
+    setSources([]);
+    setConcepts([]);
+    setQuestions([]);
+    setInsights(null);
+    setAuditLogs([]);
+    setMessage("");
+    setStudySession(null);
+    setStudyQuestions([]);
+
     if (!module) return;
-    getModuleSources(module.id)
+
+    void getModuleSources(module.id)
       .then(setSources)
       .catch(() => setMessage("Unable to load module sources."));
-  }, [module]);
+    void getModuleConcepts(module.id).then(setConcepts);
+    void getModuleQuestions(module.id).then(setQuestions);
+    void getModuleInsights(module.id).then(setInsights);
+    void getModuleAuditLogs(module.id).then(setAuditLogs);
+  }, [module?.id]);
 
   if (!module) {
     return (
@@ -131,13 +187,13 @@ export function ModuleWorkspace({ module }: { module: Module | null }) {
   if (studySession) {
     return (
       <section className="flex h-full min-w-0 flex-1 flex-col bg-slate-50">
-        <header className="border-b border-slate-200 bg-white px-7 py-5">
+        <header className="border-b border-slate-200 bg-white px-4 py-4 sm:px-7 sm:py-5">
           <p className="text-xs font-bold uppercase tracking-[0.13em] text-indigo-600">
             Study session
           </p>
           <h1 className="mt-1 text-2xl font-bold">{module.name}</h1>
         </header>
-        <div className="flex-1 overflow-y-auto p-7">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-7">
           <QuestionPlayer
             onClose={() => {
               setStudySession(null);
@@ -169,8 +225,11 @@ export function ModuleWorkspace({ module }: { module: Module | null }) {
       await generateQuestions(module.id);
       await loadQuestions();
       setMessage("Question suggestions are ready for review.");
-    } catch {
-      setMessage("Accept or edit concepts before generating questions.");
+    } catch (error: any) {
+      setMessage(
+        error.response?.data?.message ??
+          "Accept or edit concepts before generating questions.",
+      );
     } finally {
       setIsWorking(false);
     }
@@ -193,30 +252,33 @@ export function ModuleWorkspace({ module }: { module: Module | null }) {
 
   return (
     <section className="flex h-full min-w-0 flex-1 flex-col bg-slate-50">
-      <header className="border-b border-slate-200 bg-white px-7 pt-6">
+      <header className="border-b border-slate-200 bg-white px-4 pt-4 sm:px-7 sm:pt-6">
         <p className="text-xs font-bold uppercase tracking-[0.13em] text-indigo-600">
           Module
         </p>
-        <h1 className="mt-1 text-3xl font-bold tracking-tight">
+        <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">
           {module.name}
         </h1>
         {module.description && (
           <p className="mt-2 text-sm text-slate-600">{module.description}</p>
         )}
-        <div className="mt-6 flex gap-1 overflow-x-auto">
-          {tabs.map((tab) => (
-            <button
-              className={`border-b-2 px-3 py-3 text-sm font-semibold transition ${activeTab === tab.id ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-500 hover:text-slate-950"}`}
-              key={tab.id}
-              onClick={() => selectTab(tab.id)}
-              type="button"
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div className="mt-4 overflow-x-auto pb-1 sm:mt-6">
+          <Tabs
+            className="w-max"
+            onValueChange={(value) => selectTab(value as Tab)}
+            value={activeTab}
+          >
+            <TabsList variant="line">
+              {tabs.map((tab) => (
+                <TabsTrigger key={tab.id} value={tab.id}>
+                  {tab.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
         </div>
       </header>
-      <div className="flex-1 overflow-y-auto p-7">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-7">
         {message && (
           <p className="mb-5 rounded-xl bg-indigo-50 px-4 py-3 text-sm text-indigo-800">
             {message}
@@ -249,7 +311,7 @@ export function ModuleWorkspace({ module }: { module: Module | null }) {
           />
         )}
         {activeTab === "study" && (
-          <div className="max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
             <p className="text-sm font-semibold text-indigo-600">
               STUDY SESSION
             </p>
@@ -258,14 +320,15 @@ export function ModuleWorkspace({ module }: { module: Module | null }) {
               Start a ten-question session using approved questions. The backend
               chooses the latest versions and can focus on low-mastery concepts.
             </p>
-            <button
-              className="mt-6 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+            <Button
+              className="mt-6"
               disabled={isWorking}
               onClick={() => void beginStudySession()}
               type="button"
             >
+              {isWorking && <Spinner />}
               Start 10-question session
-            </button>
+            </Button>
           </div>
         )}
         {activeTab === "insights" && (
@@ -293,7 +356,7 @@ function InsightsView({
       </div>
     );
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-6xl">
       <div>
         <div>
           <p className="text-sm font-semibold text-indigo-600">
@@ -302,34 +365,33 @@ function InsightsView({
           <h2 className="mt-1 text-2xl font-bold">Mastery and weak areas</h2>
         </div>
       </div>
-      <div className="mt-6 grid gap-3 sm:grid-cols-4">
-        {Object.entries(insights.mastery_distribution).map(
-          ([bucket, count]) => (
-            <div
-              className="rounded-2xl border border-slate-200 bg-white p-4"
-              key={bucket}
-            >
-              <p className="text-xs font-bold uppercase tracking-[0.1em] text-slate-400">
-                {bucket.replace("_count", "")}
-              </p>
-              <p className="mt-2 text-2xl font-bold">{count}</p>
-            </div>
-          ),
-        )}
+      <div className="mt-6">
+        <Pie concepts={concepts} distribution={insights.mastery_distribution} />
       </div>
-      <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
+      <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
         <h3 className="font-bold">Weak concepts</h3>
-        <div className="mt-3 space-y-2">
+        <div className="mt-4 grid auto-rows-[12.5rem] grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-4">
           {insights.weak_concepts.length ? (
             insights.weak_concepts.map((concept) => (
               <div
-                className="flex justify-between rounded-xl bg-slate-50 px-3 py-2 text-sm"
+                className="card h-full border border-rose-100 bg-rose-50 shadow-sm"
                 key={concept.id}
               >
-                <span>{concept.title}</span>
-                <span className="font-semibold text-rose-600">
-                  {concept.mastery_score}%
-                </span>
+                <div className="card-body flex h-full flex-col p-4">
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <h4 className="card-title min-w-0 flex-1 line-clamp-3 text-sm leading-5 text-slate-900">
+                      {concept.title}
+                    </h4>
+                    <MasteryProgress
+                      color="text-rose-500"
+                      score={concept.mastery_score}
+                      size="3.5rem"
+                    />
+                  </div>
+                  <p className="mt-auto text-xs font-medium text-rose-700">
+                    Needs more practice
+                  </p>
+                </div>
               </div>
             ))
           ) : (
@@ -337,22 +399,32 @@ function InsightsView({
           )}
         </div>
       </div>
-      <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
+      <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
         <h3 className="font-bold">Mastery by concept</h3>
-        <div className="mt-3 space-y-2">
+        <div className="mt-4 grid auto-rows-[12.5rem] grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] gap-4">
           {concepts
             .filter((concept) =>
-              ["accepted", "edited"].includes(concept.status),
+              ["accepted", "edited", "merged"].includes(concept.status),
             )
             .map((concept) => (
               <div
-                className="flex justify-between rounded-xl bg-slate-50 px-3 py-2 text-sm"
+                className="card h-full border border-slate-200 bg-slate-50 shadow-sm"
                 key={concept.id}
               >
-                <span>{concept.title}</span>
-                <span className="font-semibold text-indigo-700">
-                  {concept.mastery_score ?? 0}%
-                </span>
+                <div className="card-body flex h-full flex-col p-4">
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <h4 className="card-title min-w-0 flex-1 line-clamp-3 text-sm leading-5 text-slate-900">
+                      {concept.title}
+                    </h4>
+                    <MasteryProgress
+                      score={concept.mastery_score}
+                      size="3.5rem"
+                    />
+                  </div>
+                  <p className="mt-auto text-xs font-medium text-slate-500">
+                    {masteryLabel(concept.mastery_score)}
+                  </p>
+                </div>
               </div>
             ))}
         </div>
