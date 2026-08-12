@@ -281,7 +281,7 @@ export class LearningService {
         { inlineData: { mimeType: "application/pdf", data: version.raw_text } },
       ];
     const ai = await this.aiJson(
-      'Return JSON only: {"concepts":[{"title":"specific topic name","definition":"2-4 sentence explanation that gives context and never repeats the title","facts":["fact"],"tags":["tag"],"source_excerpt":"supporting text"}]}. Create 4 to 6 meaningful, high-level study concepts for the entire source. Each concept must cover one coherent topic by combining related slides, repeated explanations, examples, and small subtopics. Do not create a concept for each slide, sentence, fact, or section heading. Avoid vague titles such as "Introduction", "Overview", or "Deep Dive". The definition must explain the topic in plain language, not restate its title. Extract only concepts grounded in the source.',
+      'Return JSON only: {"concepts":[{"title":"specific topic name","definition":"2-4 sentence explanation that gives context and never repeats the title","facts":["fact"],"tags":["tag"],"source_excerpt":"supporting text"}]}. Create 4 to 6 meaningful, high-level study concepts for the entire source. Each concept must cover one coherent topic by combining related slides, repeated explanations, examples, and small subtopics. Do not create a concept for each slide, sentence, fact, or section heading. Avoid vague titles such as "Introduction", "Overview", or "Deep Dive". The definition must explain the topic clearly in plain language, not restate its title. Extract only concepts grounded in the source.',
       input,
     );
     if (source.source_type === "pdf" && !Array.isArray(ai?.data?.concepts)) {
