@@ -1,45 +1,70 @@
-# Smart Study Coach
+# DeepFabric — Smart Study Coach
 
-An Express + MySQL backend for turning source notes into reviewed concepts, a versioned question bank, study attempts, and explainable mastery review schedules. The React + TypeScript client lives in `frontend/`.
+DeepFabric turns study material into AI-assisted concepts and practice questions. Users organise work into workspaces, subjects, and modules; review generated content; take study sessions; and track mastery and learning activity.
 
-## Run locally
+## Project structure
 
-### Prerequisites
+```text
+frontend/       React + TypeScript + Redux + shadcn UI
+backend/        Original Express backend
+backend_nest/   NestJS backend used by the current frontend
+database/       Shared MySQL schema
+```
+
+The Express and Nest backends are independent. The frontend currently uses the Nest backend at `http://localhost:4001/api`.
+
+## Prerequisites
 
 - Node.js 20 or newer
-- MySQL 8 or newer, running locally
-- A Gemini API key for AI-powered extraction, question generation, and short-answer grading. The app has a limited local fallback when no key is provided.
+- MySQL 8 or newer
+- A Gemini API key for AI concept extraction, question generation, concept merging, and short-answer grading
 
-### 1. Create the database
+## Run the application
 
-From the repository root, create the `deepfabric` database and tables:
+### 1. Create the MySQL database
+
+Create the `deepfabric` database and tables from the repository root:
 
 ```powershell
 mysql -u root -p < database/schema.sql
 ```
 
-The default backend connection uses MySQL on `localhost:3306` with user `root`, password `root`, and database `deepfabric`. If your MySQL setup differs, update [backend/db/connectToDB.js](backend/db/connectToDB.js).
+### 2. Configure the Nest backend
 
-### 2. Configure and run the backend
+Create `backend_nest/.env` by copying `backend_nest/.env.example`.
 
-Create `backend/.env` from `backend/.env.example`, then set at least a secure `JWT_SECRET`. Add your Gemini key to enable AI features:
+```powershell
+Copy-Item backend_nest/.env.example backend_nest/.env
+```
+
+Set a secure JWT secret and your Gemini API key in `backend_nest/.env`:
 
 ```env
 JWT_SECRET=use-a-long-random-secret
-CLIENT_ORIGIN=http://localhost:5173
 GEMINI_API_KEY=your-gemini-api-key
-GEMINI_MODEL=gemini-3.6-flash
 ```
 
-In one terminal:
+The default MySQL configuration is:
+
+```env
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=root
+DB_NAME=deepfabric
+PORT=4001
+CLIENT_ORIGIN=http://localhost:5173
+```
+
+Start the backend:
 
 ```powershell
-cd backend
+cd backend_nest
 npm install
-npm run server
+npm run dev
 ```
 
-The API starts at `http://localhost:4000`.
+The Nest server runs at `http://localhost:4001/api` and automatically restarts when files in `src/` change.
 
 ### 3. Run the frontend
 
@@ -51,47 +76,32 @@ npm install
 npm run dev
 ```
 
-Open the URL shown by Vite, normally `http://localhost:5173`.
+Open the Vite URL, normally `http://localhost:5173`.
 
-The frontend is already configured to call `http://localhost:4000/api` and sends authentication cookies with requests. Keep the backend and frontend running at the same time.
+## Test account
 
+Use this account to explore the application:
 
+```text
+Email: shadcn@gmail.com
+Password: shadcn@123
+```
 
-## Core API workflow
+## Main workflow
 
-- Create workspace, subject, and module through `/api/content`.
-- Add a source and source versions through `/api/learning/sources` and `/api/learning/source-versions`.
-- Create/review concepts and questions through `/api/learning/concepts` and `/api/learning/questions`.
-- Start a session, create an attempt, then grade it:
-  - `PATCH /api/learning/attempts/:attemptId/grade`
-  - `PATCH /api/learning/attempts/:attemptId/override`
-  - `GET /api/learning/mastery/due?module_id=<module-id>`
+1. Register or log in.
+2. Create a workspace, subject, and module from the sidebar.
+3. Add text, a PDF, or a web link as a source.
+4. Process the source to generate concept suggestions with Gemini.
+5. Accept, edit, reject, or merge concepts.
+6. Generate and review questions.
+7. Start a 10-question study session.
+8. View module insights, audit history, and the home activity dashboard.
 
-## Read APIs for the frontend
+## Important behavior
 
-- `GET /api/content/workspaces`
-- `GET /api/content/workspaces/:workspaceId/subjects`
-- `GET /api/content/subjects/:subjectId/modules`
-- `GET /api/content/modules/:moduleId`
-- `GET /api/learning/modules/:moduleId/sources`
-- `GET /api/learning/modules/:moduleId/concepts`
-- `GET /api/learning/modules/:moduleId/questions`
-- `GET /api/learning/modules/:moduleId/study-sessions`
-- `GET /api/learning/study-sessions/:sessionId/attempts`
-
-Each endpoint scopes its result through the authenticated user. Nested resources belonging to a different user are returned as not found.
-
-## Mastery and review algorithm
-
-Every grade or override recalculates the concept from its complete immutable attempt history. Result points are `correct = +10`, `partial = +5`, and `incorrect = -8`. An attempt is weighted by `max(0.25, 1 - age_in_days / 30)`, so recent work has more influence. The summed score is rounded and clamped to 0–100.
-
-| Score | Bucket | Next review |
-| --- | --- | --- |
-| 0–24 | New | 1 day |
-| 25–49 | Learning | 2 days |
-| 50–74 | Proficient | 4 days |
-| 75–100 | Mastered | 7 days |
-
-The due endpoint only returns active, current concepts and includes score, bucket, most recent result, elapsed days, and a deterministic explanation.
-
-
+- Source edits create a new source version. Existing reviewed concepts are marked outdated rather than deleted.
+- Concept edit history is reconstructed from audit-log snapshots.
+- Question edits create entries in `question_versions`.
+- Audit entries are scoped to the logged-in user and module.
+- The home dashboard aggregates the logged-in user's attempts and sessions across all modules.
