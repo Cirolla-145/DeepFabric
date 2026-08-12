@@ -226,9 +226,9 @@ export function SourcePanel({
   };
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+    <div className="grid gap-6 xl:h-full xl:min-h-0 xl:grid-cols-[1.1fr_0.9fr]">
       <form
-        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
+        className="flex flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
         onSubmit={(event) => void saveSource(event)}
       >
         <p className="text-sm font-semibold text-indigo-600">ADD SOURCE</p>
@@ -257,14 +257,14 @@ export function SourcePanel({
         />
         {mode === "text" && (
           <textarea
-            className="mt-3 min-h-56 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm leading-6 outline-none focus:border-indigo-500"
+            className="mt-3 min-h-40 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm leading-6 outline-none focus:border-indigo-500 xl:min-h-0 xl:flex-1"
             onChange={(event) => setText(event.target.value)}
             placeholder="Paste your notes here…"
             value={text}
           />
         )}
         {mode === "pdf" && (
-          <label className="mt-3 grid min-h-40 cursor-pointer place-items-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 text-center text-sm text-slate-500">
+          <label className="mt-3 grid min-h-40 cursor-pointer place-items-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 text-center text-sm text-slate-500 xl:min-h-0 xl:flex-1">
             <span>
               <strong className="block text-slate-700">
                 {file?.name ?? "Choose a PDF file"}
@@ -298,10 +298,10 @@ export function SourcePanel({
           {isWorking ? "Saving…" : "Save source"}
         </button>
       </form>
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="flex min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <p className="text-sm font-semibold text-indigo-600">SAVED SOURCES</p>
         <h2 className="mt-1 text-xl font-bold">Process into concepts</h2>
-        <div className="relative mt-5">
+        <div className="relative mt-5 min-h-0 flex-1">
           <button
             aria-label="Show previous source"
             className="absolute top-2 right-1 z-10 rounded-full border border-slate-200 bg-white p-1.5 text-slate-600 shadow-sm hover:bg-slate-50"
@@ -311,7 +311,7 @@ export function SourcePanel({
             <ChevronUp className="size-4" />
           </button>
           <div
-            className="max-h-[55vh] snap-y snap-mandatory space-y-5 overflow-y-auto px-2 pt-2 pr-10 pb-72 sm:max-h-[24rem] sm:px-4 sm:pr-12 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="max-h-[55vh] snap-y snap-mandatory space-y-5 overflow-y-auto px-2 pt-2 pr-10 pb-72 sm:max-h-[24rem] sm:px-4 sm:pr-12 xl:h-full xl:max-h-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
             onScroll={updateFocusedSource}
             ref={sourceListRef}
           >

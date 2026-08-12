@@ -66,7 +66,13 @@ export type HomeInsights = {
   total_sessions: number;
   total_correct: number;
   attempt_counts: { correct: number; incorrect: number; partial: number };
-  difficulty_counts: { easy: number; medium: number; hard: number };
+  difficulty_counts: {
+    level_1: number;
+    level_2: number;
+    level_3: number;
+    level_4: number;
+    level_5: number;
+  };
   activity: Array<{
     date: string;
     sessions: number;

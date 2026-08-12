@@ -52,10 +52,12 @@ export function AuditPanel({ auditLogs }: { auditLogs: AuditLog[] }) {
               className="rounded-2xl border border-slate-200 bg-white p-5"
               key={log.id}
             >
-              <p className="font-semibold text-slate-900">{actionText(log)}</p>
-              <p className="mt-2 text-sm text-slate-500">
-                {new Date(log.created_at).toLocaleString()}
-              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <p className="font-semibold text-slate-900">{actionText(log)}</p>
+                <p className="shrink-0 text-sm text-slate-500 sm:text-right">
+                  {new Date(log.created_at).toLocaleString()}
+                </p>
+              </div>
             </article>
           ))
         ) : (

@@ -5,9 +5,9 @@ import { DashboardPage } from './DashboardPage'
 const highlights = ['Turn notes into concepts', 'Practice with focused quizzes', 'Know exactly what to review']
 
 export function HomePage() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  
   const authUser = useSelector((state: any) => state.userLogin.currentUser)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  
   const loadingSession = useSelector((state: any) => state.userLogin.isPending)
 
   if (loadingSession) {

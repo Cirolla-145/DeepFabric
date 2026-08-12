@@ -13,9 +13,11 @@ import type { HomeInsights } from "../../api/learningApi";
 type ActivityDay = HomeInsights["activity"][number] & { key: string };
 
 const difficultyLevels = [
-  { id: "easy", label: "Easy", color: "#22c55e" },
-  { id: "medium", label: "Medium", color: "#f59e0b" },
-  { id: "hard", label: "Hard", color: "#ef4444" },
+  { id: "level_1", label: "Level 1", color: "#22c55e" },
+  { id: "level_2", label: "Level 2", color: "#06b6d4" },
+  { id: "level_3", label: "Level 3", color: "#6366f1" },
+  { id: "level_4", label: "Level 4", color: "#f59e0b" },
+  { id: "level_5", label: "Level 5", color: "#ef4444" },
 ] as const;
 
 const dateKey = (date: Date) => {
@@ -112,7 +114,15 @@ export function HomeDashboard({ insights }: { insights: HomeInsights | null }) {
     let days = 0;
     for (let index = activityDays.length - 1; index >= 0; index -= 1) {
       const day = activityDays[index];
-      if (day.sessions + day.correct_answers === 0) break;
+      if (day.sessions + day.correct_answers === 0){
+        if(index!=activityDays.length - 1) break;
+        if(day.sessions + day.correct_answers !== 0) {
+          days+=1;
+        }
+        continue;
+      }
+
+      // if (day.sessions + day.correct_answers === 0 && index!=activityDays.length - 1) break;
       days += 1;
     }
     return days;
@@ -143,7 +153,7 @@ export function HomeDashboard({ insights }: { insights: HomeInsights | null }) {
   }
 
   return (
-    <section className="min-h-full overflow-y-auto bg-slate-50 p-4 sm:p-7">
+    <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-slate-50 p-4 sm:p-7">
       <div className="mx-auto max-w-6xl">
         <p className="text-sm font-semibold text-indigo-600">YOUR LEARNING</p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">
@@ -198,15 +208,6 @@ export function HomeDashboard({ insights }: { insights: HomeInsights | null }) {
                   </ResponsiveContainer>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-4 text-center text-sm">
-                  {chartData.map((item) => (
-                    <div key={item.id}>
-                      <span className="mx-auto mb-1 block size-2 rounded-full" style={{ background: item.color }} />
-                      <p className="font-semibold text-slate-900">{item.value}</p>
-                      <p className="text-slate-500">{item.label}</p>
-                    </div>
-                  ))}
-                </div>
               </div>
 
               <div className="grid w-full max-w-sm grid-cols-2 gap-3 self-center rounded-2xl border border-slate-100 bg-slate-50 p-3">

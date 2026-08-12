@@ -60,7 +60,6 @@ export function Pie({ distribution, concepts }: PieProps) {
       .map((concept) => concept.title),
   }));
   const [activeLevel, setActiveLevel] = React.useState(data.find((item) => item.value > 0)?.id ?? data[0].id);
-  const activeItem = data.find((item) => item.id === activeLevel) ?? data[0];
   const total = data.reduce((sum, item) => sum + item.value, 0);
 
   const renderPieShape = React.useCallback(
@@ -134,14 +133,14 @@ export function Pie({ distribution, concepts }: PieProps) {
                         x={viewBox.cx}
                         y={viewBox.cy}
                       >
-                        {activeItem.value}
+                        {total}
                       </tspan>
                       <tspan
                         className="fill-muted-foreground text-sm"
                         x={viewBox.cx}
                         y={(viewBox.cy ?? 0) + 24}
                       >
-                        {activeItem.label}
+                        Total concepts
                       </tspan>
                     </text>
                   );

@@ -6,6 +6,7 @@ import {
 } from "react-icons/hi2";
 import { MdOutlineWorkspaces } from "react-icons/md";
 import flowImage from "../assets/flow.png";
+import quotesData from "../assets/quotes.json";
 import { useDispatch, useSelector } from "react-redux";
 import {
   createModule,
@@ -104,15 +105,22 @@ export function DashboardPage() {
   const authUser = useSelector((state: any) => state.userLogin.currentUser);
   const workspaces = useSelector((state: any) => state.content.workspaces);
   const subjects = useSelector((state: any) => state.content.subjects);
-  const modules = useSelector((state: any) => state.content.modules);
 
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
   const [selectedSubjectId, setSelectedSubjectId] = useState("");
   const [selectedModuleId, setSelectedModuleId] = useState("");
-  const [expandedWorkspaceId, setExpandedWorkspaceId] = useState("");
-  const [expandedSubjectId, setExpandedSubjectId] = useState("");
+  const [activeModule, setActiveModule] = useState<Module | null>(null);
+  const [activeWorkspaceName, setActiveWorkspaceName] = useState("");
+  const [activeSubjectName, setActiveSubjectName] = useState("");
+  const [expandedWorkspaceIds, setExpandedWorkspaceIds] = useState<string[]>([]);
+  const [expandedSubjectIds, setExpandedSubjectIds] = useState<string[]>([]);
+  const [subjectsByWorkspace, setSubjectsByWorkspace] = useState<Record<string, Subject[]>>({});
+  const [modulesBySubject, setModulesBySubject] = useState<Record<string, Module[]>>({});
   const [addTarget, setAddTarget] = useState<AddTarget | null>(null);
   const [homeInsights, setHomeInsights] = useState<HomeInsights | null>(null);
+  const [dailyQuote] = useState(
+    () => quotesData.quotes[Math.floor(Math.random() * quotesData.quotes.length)],
+  );
   const helpDialogRef = useRef<HTMLDialogElement>(null);
 
   const showError = (message: string) => dispatch(setContentError(message));
@@ -127,7 +135,9 @@ export function DashboardPage() {
 
   const loadSubjects = async (workspaceId: string) => {
     try {
-      dispatch(setSubjects(await getSubjects(workspaceId)));
+      const workspaceSubjects = await getSubjects(workspaceId);
+      dispatch(setSubjects(workspaceSubjects));
+      setSubjectsByWorkspace((current) => ({ ...current, [workspaceId]: workspaceSubjects }));
     } catch {
       showError("Unable to load subjects.");
     }
@@ -135,7 +145,9 @@ export function DashboardPage() {
 
   const loadModules = async (subjectId: string) => {
     try {
-      dispatch(setModules(await getModules(subjectId)));
+      const subjectModules = await getModules(subjectId);
+      dispatch(setModules(subjectModules));
+      setModulesBySubject((current) => ({ ...current, [subjectId]: subjectModules }));
     } catch {
       showError("Unable to load modules.");
     }
@@ -149,46 +161,43 @@ export function DashboardPage() {
   const selectWorkspace = (workspaceId: string) => {
     setSelectedWorkspaceId(workspaceId);
     setSelectedSubjectId("");
-    setSelectedModuleId("");
     dispatch(clearSubjects());
     void loadSubjects(workspaceId);
   };
 
   const selectSubject = (subjectId: string) => {
     setSelectedSubjectId(subjectId);
-    setSelectedModuleId("");
     dispatch(clearModules());
     void loadModules(subjectId);
   };
 
   const toggleWorkspace = (workspaceId: string) => {
-    if (workspaceId === selectedWorkspaceId) {
-      setExpandedWorkspaceId((current) => (current === workspaceId ? "" : workspaceId));
-      setExpandedSubjectId("");
-      return;
-    }
-
-    selectWorkspace(workspaceId);
-    setExpandedWorkspaceId(workspaceId);
-    setExpandedSubjectId("");
+    setExpandedWorkspaceIds((current) =>
+      current.includes(workspaceId)
+        ? current.filter((id) => id !== workspaceId)
+        : [...current, workspaceId],
+    );
+    if (!subjectsByWorkspace[workspaceId]) selectWorkspace(workspaceId);
   };
 
   const toggleSubject = (subjectId: string) => {
-    if (subjectId === selectedSubjectId) {
-      setExpandedSubjectId((current) => (current === subjectId ? "" : subjectId));
-      return;
-    }
-
-    selectSubject(subjectId);
-    setExpandedSubjectId(subjectId);
+    setExpandedSubjectIds((current) =>
+      current.includes(subjectId)
+        ? current.filter((id) => id !== subjectId)
+        : [...current, subjectId],
+    );
+    if (!modulesBySubject[subjectId]) selectSubject(subjectId);
   };
 
   const goHome = () => {
     setSelectedWorkspaceId("");
     setSelectedSubjectId("");
     setSelectedModuleId("");
-    setExpandedWorkspaceId("");
-    setExpandedSubjectId("");
+    setActiveModule(null);
+    setActiveWorkspaceName("");
+    setActiveSubjectName("");
+    setExpandedWorkspaceIds([]);
+    setExpandedSubjectIds([]);
     setAddTarget(null);
   };
 
@@ -235,8 +244,13 @@ export function DashboardPage() {
     }
   };
 
-  const selectedModule =
-    (modules.find((module: Module) => module.id === selectedModuleId) ?? null) as Module | null;
+  const selectedModule = activeModule;
+  const selectedWorkspace = workspaces.find(
+    (workspace: Workspace) => workspace.id === selectedWorkspaceId,
+  ) as Workspace | undefined;
+  const selectedSubject = subjects.find(
+    (subject: Subject) => subject.id === selectedSubjectId,
+  ) as Subject | undefined;
 
   return (
     <SidebarProvider>
@@ -278,17 +292,16 @@ export function DashboardPage() {
                       <div className="flex items-center gap-1">
                         <SidebarMenuButton
                           className="min-w-0 flex-1 rounded-lg text-slate-700 hover:bg-indigo-50 hover:text-slate-950 data-active:bg-indigo-100 data-active:text-indigo-950 data-active:shadow-sm"
-                          isActive={workspace.id === selectedWorkspaceId}
                           onClick={() => toggleWorkspace(workspace.id)}
                           tooltip={workspace.name}
                         >
                           <ChevronRight
-                            className={`size-4 shrink-0 transition-transform ${expandedWorkspaceId === workspace.id ? "rotate-90" : ""}`}
+                            className={`size-4 shrink-0 transition-transform ${expandedWorkspaceIds.includes(workspace.id) ? "rotate-90" : ""}`}
                           />
                           <MdOutlineWorkspaces className="size-4 text-indigo-500" />
                           <span>{workspace.name}</span>
                         </SidebarMenuButton>
-                        {expandedWorkspaceId === workspace.id && (
+                        {expandedWorkspaceIds.includes(workspace.id) && (
                           <button
                             aria-label={`Add subject to ${workspace.name}`}
                             className="shrink-0 rounded-md p-1.5 text-slate-500 hover:bg-indigo-100 hover:text-indigo-700"
@@ -305,26 +318,24 @@ export function DashboardPage() {
                         )}
                       </div>
 
-                      {expandedWorkspaceId === workspace.id &&
-                        workspace.id === selectedWorkspaceId && (
+                      {expandedWorkspaceIds.includes(workspace.id) && (
                           <div className="mt-1 ml-4 border-l border-indigo-100 pl-2">
                             <SidebarMenu>
-                              {subjects.map((subject: Subject) => (
+                              {(subjectsByWorkspace[workspace.id] ?? []).map((subject: Subject) => (
                                 <SidebarMenuItem key={subject.id}>
                                   <div className="flex items-center gap-1">
                                     <SidebarMenuButton
                                       className="min-w-0 flex-1 rounded-lg text-slate-700 hover:bg-indigo-50 hover:text-slate-950 data-active:bg-indigo-100 data-active:text-indigo-950 data-active:shadow-sm"
-                                      isActive={subject.id === selectedSubjectId}
                                       onClick={() => toggleSubject(subject.id)}
                                       tooltip={subject.name}
                                     >
                                       <ChevronRight
-                                        className={`size-4 shrink-0 transition-transform ${expandedSubjectId === subject.id ? "rotate-90" : ""}`}
+                                        className={`size-4 shrink-0 transition-transform ${expandedSubjectIds.includes(subject.id) ? "rotate-90" : ""}`}
                                       />
                                       <HiOutlineAcademicCap className="size-4 text-indigo-500" />
                                       <span>{subject.name}</span>
                                     </SidebarMenuButton>
-                                    {expandedSubjectId === subject.id && (
+                                    {expandedSubjectIds.includes(subject.id) && (
                                       <button
                                         aria-label={`Add module to ${subject.name}`}
                                         className="shrink-0 rounded-md p-1.5 text-slate-500 hover:bg-indigo-100 hover:text-indigo-700"
@@ -341,18 +352,20 @@ export function DashboardPage() {
                                     )}
                                   </div>
 
-                                  {expandedSubjectId === subject.id &&
-                                    subject.id === selectedSubjectId && (
+                                  {expandedSubjectIds.includes(subject.id) && (
                                       <div className="mt-1 ml-4 border-l border-indigo-100 pl-2">
                                         <SidebarMenu>
-                                          {modules.map((module: Module) => (
+                                          {(modulesBySubject[subject.id] ?? []).map((module: Module) => (
                                             <SidebarMenuItem key={module.id}>
                                               <SidebarMenuButton
                                                 className="rounded-lg text-slate-700 hover:bg-indigo-50 hover:text-slate-950 data-active:bg-indigo-100 data-active:text-indigo-950 data-active:shadow-sm"
                                                 isActive={module.id === selectedModuleId}
-                                                onClick={() =>
-                                                  setSelectedModuleId(module.id)
-                                                }
+                                                onClick={() => {
+                                                  setSelectedModuleId(module.id);
+                                                  setActiveModule(module);
+                                                  setActiveWorkspaceName(workspace.name);
+                                                  setActiveSubjectName(subject.name);
+                                                }}
                                                 tooltip={module.name}
                                               >
                                                 <HiOutlineRectangleStack className="size-4 text-indigo-500" />
@@ -431,9 +444,12 @@ export function DashboardPage() {
         </SidebarFooter>
       </Sidebar>
 
-      <SidebarInset>
+      <SidebarInset className="h-svh min-h-0 overflow-hidden">
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3 sm:h-16 sm:px-4">
           <SidebarTrigger />
+          <p className="hidden min-w-0 flex-1 truncate px-3 text-center text-sm italic text-slate-500 lg:block">
+            “{dailyQuote}”
+          </p>
           <div className="ml-auto flex items-center gap-1 sm:gap-3">
             <span className="hidden text-sm text-muted-foreground sm:inline">
               {authUser?.name}
@@ -445,7 +461,11 @@ export function DashboardPage() {
           </div>
         </header>
         {selectedModule ? (
-          <ModuleWorkspace module={selectedModule} />
+          <ModuleWorkspace
+            module={selectedModule}
+            subjectName={activeSubjectName || selectedSubject?.name || "Subject"}
+            workspaceName={activeWorkspaceName || selectedWorkspace?.name || "Workspace"}
+          />
         ) : (
           <HomeDashboard insights={homeInsights} />
         )}

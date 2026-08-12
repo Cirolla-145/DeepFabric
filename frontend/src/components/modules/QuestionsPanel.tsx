@@ -126,7 +126,7 @@ export function QuestionsPanel({
   };
 
   return (
-    <div className="max-w-4xl">
+    <div className="flex h-full min-h-0 max-w-4xl flex-col">
       <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm font-semibold text-indigo-600">
@@ -149,7 +149,7 @@ export function QuestionsPanel({
         </div>
       </div>
       <div
-        className="mt-6 max-h-[70vh] snap-y snap-mandatory space-y-5 overflow-y-auto px-2 pt-2 pb-[40vh] sm:px-5"
+        className="mt-6 min-h-0 flex-1 snap-y snap-mandatory space-y-5 overflow-y-auto px-2 pt-2 pb-[40vh] sm:px-5"
         onScroll={updateFocusedQuestion}
         ref={questionListRef}
       >

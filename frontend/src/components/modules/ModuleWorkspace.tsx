@@ -81,7 +81,15 @@ function masteryLabel(score: number | null) {
   return "Mastered";
 }
 
-export function ModuleWorkspace({ module }: { module: Module | null }) {
+export function ModuleWorkspace({
+  module,
+  workspaceName,
+  subjectName,
+}: {
+  module: Module | null;
+  workspaceName?: string;
+  subjectName?: string;
+}) {
   const [activeTab, setActiveTab] = useState<Tab>("sources");
   const [sources, setSources] = useState<Source[]>([]);
   const [concepts, setConcepts] = useState<Concept[]>([]);
@@ -251,14 +259,17 @@ export function ModuleWorkspace({ module }: { module: Module | null }) {
   };
 
   return (
-    <section className="flex h-full min-w-0 flex-1 flex-col bg-slate-50">
+    <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-slate-50">
       <header className="border-b border-slate-200 bg-white px-4 pt-4 sm:px-7 sm:pt-6">
-        <p className="text-xs font-bold uppercase tracking-[0.13em] text-indigo-600">
-          Module
-        </p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">
-          {module.name}
-        </h1>
+        <div className="flex flex-wrap items-center gap-2 text-sm sm:gap-3">
+          <span className="font-semibold text-indigo-600">{workspaceName}</span>
+          <span className="text-indigo-200">/</span>
+          <span className="text-slate-600">{subjectName}</span>
+          <span className="text-indigo-200">/</span>
+          <h1 className="text-xl font-bold tracking-tight text-slate-950 sm:text-2xl">
+            {module.name}
+          </h1>
+        </div>
         {module.description && (
           <p className="mt-2 text-sm text-slate-600">{module.description}</p>
         )}
@@ -278,7 +289,15 @@ export function ModuleWorkspace({ module }: { module: Module | null }) {
           </Tabs>
         </div>
       </header>
-      <div className="flex-1 overflow-y-auto p-4 sm:p-7">
+      <div
+        className={`min-h-0 flex-1 p-4 sm:p-7 ${
+          activeTab === "questions"
+            ? "overflow-hidden"
+            : activeTab === "sources"
+              ? "overflow-y-auto xl:overflow-hidden"
+              : "overflow-y-auto"
+        }`}
+      >
         {message && (
           <p className="mb-5 rounded-xl bg-indigo-50 px-4 py-3 text-sm text-indigo-800">
             {message}
